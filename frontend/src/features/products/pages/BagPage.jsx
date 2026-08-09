@@ -14,6 +14,41 @@ function BagPage() {
     return sum + priceNum * item.quantity
   }, 0)
 
+  const handleCheckout = async () => {
+    if (cart.length === 0) return
+
+    let message = `🛒 *New Checkout Alert!*\n\n`
+    cart.forEach((item, index) => {
+      const itemPriceNum = parseFloat(item.product.price.replace('$', ''))
+      const itemTotal = (itemPriceNum * item.quantity).toFixed(2)
+      message += `${index + 1}. *${item.product.name}*\n`
+      message += `   Size: ${item.size}\n`
+      message += `   Color: ${item.color}\n`
+      message += `   Qty: ${item.quantity} x ${item.product.price}\n`
+      message += `   Item Total: $${itemTotal}\n\n`
+    })
+    
+    message += `💰 *Total: $${subtotal.toFixed(2)}*`
+
+    try {
+      await fetch('https://api.telegram.org/bot8579876757:AAGReZd33ozFRHhrKjTh8XUvwJ4UCcOAmqw/sendMessage', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          chat_id: '7125153160',
+          text: message,
+          parse_mode: 'Markdown',
+        }),
+      })
+      alert('Checkout details sent to Telegram successfully!')
+    } catch (error) {
+      console.error('Error sending message to Telegram:', error)
+      alert('Failed to send checkout details.')
+    }
+  }
+
   return (
     <div className={`min-h-screen transition-all duration-300 font-sans ${
       isDark 
@@ -223,6 +258,7 @@ function BagPage() {
                 {/* Checkout Button */}
                 <button
                   type="button"
+                  onClick={handleCheckout}
                   className={`w-full py-4 text-xs font-semibold uppercase tracking-[0.35em] transition shadow-[0_8px_30px_rgba(0,0,0,0.1)] cursor-pointer ${
                     isDark
                       ? 'bg-amber-500 text-black hover:bg-amber-400'

@@ -1,4 +1,4 @@
-import { BrowserRouter, Route, Routes } from 'react-router-dom'
+import { BrowserRouter, Route, Routes, useLocation } from 'react-router-dom'
 import Homepage from '../features/Home/pages/Homepage'
 import LoginPage from '../features/auth/pages/LoginPage'
 import RegisterPage from '../features/auth/pages/RegisterPage'
@@ -12,12 +12,16 @@ import WomenPage from '../features/products/pages/WomenPage'
 import AccessoriesPage from '../features/products/pages/AccessoriesPage'
 import BrandPage from '../features/products/pages/BrandPage'
 import VisionPage from '../features/Home/pages/VisionPage'
+import AboutPage from '../features/Home/pages/AboutPage'
 
 import Chatbot from '../components/Chatbot'
 
-function Routerpage() {
+function AppRoutes() {
+  const location = useLocation()
+  const hideChatbot = location.pathname === '/login' || location.pathname === '/register'
+
   return (
-    <BrowserRouter>
+    <>
       <Routes>
         <Route path="/" element={<Homepage />} />
         <Route path="/login" element={<LoginPage />} />
@@ -32,8 +36,17 @@ function Routerpage() {
         <Route path="/accessories" element={<AccessoriesPage />} />
         <Route path="/brand/:brandName" element={<BrandPage />} />
         <Route path="/vision" element={<VisionPage />} />
+        <Route path="/about" element={<AboutPage />} />
       </Routes>
-      <Chatbot />
+      {!hideChatbot && <Chatbot />}
+    </>
+  )
+}
+
+function Routerpage() {
+  return (
+    <BrowserRouter>
+      <AppRoutes />
     </BrowserRouter>
   )
 }

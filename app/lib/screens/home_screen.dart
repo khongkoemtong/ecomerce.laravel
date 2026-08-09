@@ -2,18 +2,48 @@ import 'package:flutter/material.dart';
 import '../constants/app_colors.dart';
 import '../constants/app_typography.dart';
 import '../widgets/product_card.dart';
-import '../services/mock_data_service.dart';
+import '../services/api_service.dart';
+import '../models/product.dart';
 import 'product_detail_screen.dart';
 import 'placeholder_screen.dart';
 import 'category_screen.dart';
+import 'style_quiz_screen.dart';
 
-class HomeScreen extends StatelessWidget {
+class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
 
   @override
+  State<HomeScreen> createState() => _HomeScreenState();
+}
+
+class _HomeScreenState extends State<HomeScreen> {
+  List<Product> newArrivals = [];
+  List<Product> trending = [];
+  bool isLoading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchProducts();
+  }
+
+  Future<void> _fetchProducts() async {
+    final products = await ApiService.getProducts();
+    if (mounted) {
+      setState(() {
+        newArrivals = products.take(4).toList();
+        trending = products.skip(4).take(4).toList();
+        if (trending.isEmpty) trending = List.from(newArrivals);
+        isLoading = false;
+      });
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final newArrivals = MockDataService.newArrivals;
-    final trending = MockDataService.trendingProducts;
+    if (isLoading) {
+      return const Center(child: CircularProgressIndicator(color: AppColors.black));
+    }
 
     return SingleChildScrollView(
       child: Column(
@@ -126,10 +156,10 @@ class HomeScreen extends StatelessWidget {
               scrollDirection: Axis.horizontal,
               padding: const EdgeInsets.only(left: 24.0, right: 8.0),
               children: [
-                _buildCategoryItem(context, 'Women', 'https://i.pinimg.com/736x/27/8c/ab/278cabcc30624538662c9409417f6b50.jpg'),
-                _buildCategoryItem(context, 'Men', 'https://i.pinimg.com/1200x/40/0f/13/400f13c201cdb8f0dce30c0914aef482.jpg'),
+                _buildCategoryItem(context, 'New Season', 'https://i.pinimg.com/736x/27/8c/ab/278cabcc30624538662c9409417f6b50.jpg'),
+                _buildCategoryItem(context, 'Outerwear', 'https://i.pinimg.com/1200x/40/0f/13/400f13c201cdb8f0dce30c0914aef482.jpg'),
                 _buildCategoryItem(context, 'Accessories', 'https://i.pinimg.com/736x/f3/fb/ac/f3fbacee2ebada21395d358b8c77871d.jpg'),
-                _buildCategoryItem(context, 'Shoes', 'https://i.pinimg.com/736x/ea/3e/08/ea3e08ca0edac942f63552aff1757f6d.jpg'),
+                _buildCategoryItem(context, 'Footwear', 'https://i.pinimg.com/736x/ea/3e/08/ea3e08ca0edac942f63552aff1757f6d.jpg'),
               ],
             ),
           ),
@@ -196,7 +226,7 @@ class HomeScreen extends StatelessWidget {
                   onPressed: () {
                     Navigator.push(
                       context,
-                      MaterialPageRoute(builder: (_) => const PlaceholderScreen(title: 'Style Quiz')),
+                      MaterialPageRoute(builder: (_) => const StyleQuizScreen()),
                     );
                   },
                   style: OutlinedButton.styleFrom(

@@ -13,7 +13,20 @@ function mapSession(payload) {
 }
 
 function getErrorMessage(error) {
-  return error?.data?.message || error?.message || 'Request failed.'
+  const message = error?.data?.message || error?.message || 'Request failed.'
+
+  if (message === 'validate error' || error?.status === 422) {
+    if (error?.data?.errors) {
+      const firstErrorKey = Object.keys(error.data.errors)[0]
+      if (firstErrorKey) {
+        const firstError = error.data.errors[firstErrorKey]
+        return Array.isArray(firstError) ? firstError[0] : firstError
+      }
+    }
+    return 'Please check the form for errors.'
+  }
+
+  return message
 }
 
 export const login = createAsyncThunk(

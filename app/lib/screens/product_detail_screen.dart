@@ -3,7 +3,7 @@ import '../constants/app_colors.dart';
 import '../constants/app_typography.dart';
 import '../models/product.dart';
 import '../widgets/product_card.dart';
-import '../services/mock_data_service.dart';
+import '../services/api_service.dart';
 import '../services/app_state.dart';
 import '../utils/toast_utils.dart';
 
@@ -19,10 +19,25 @@ class ProductDetailScreen extends StatefulWidget {
 class _ProductDetailScreenState extends State<ProductDetailScreen> {
   String selectedSize = 'M';
   int _currentImageIndex = 0;
+  List<Product> completeTheLook = [];
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchProducts();
+  }
+
+  Future<void> _fetchProducts() async {
+    final products = await ApiService.getProducts();
+    if (mounted) {
+      setState(() {
+        completeTheLook = products.take(4).toList();
+      });
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
-    final completeTheLook = MockDataService.completeTheLook;
     // Simulate a list of images for the carousel
     final images = [
       widget.product.imageUrl,

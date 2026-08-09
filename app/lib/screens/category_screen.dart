@@ -2,28 +2,43 @@ import 'package:flutter/material.dart';
 import '../constants/app_colors.dart';
 import '../constants/app_typography.dart';
 import '../widgets/product_card.dart';
-import '../services/mock_data_service.dart';
+import '../services/api_service.dart';
+import '../models/product.dart';
 import 'product_detail_screen.dart';
 
-class CategoryScreen extends StatelessWidget {
+class CategoryScreen extends StatefulWidget {
   final String categoryName;
 
   const CategoryScreen({super.key, required this.categoryName});
 
   @override
-  Widget build(BuildContext context) {
-    // Collect all products and filter by category
-    final allProducts = [
-      ...MockDataService.newArrivals,
-      ...MockDataService.trendingProducts,
-      ...MockDataService.completeTheLook,
-    ];
-    
-    // Simple filter by category string (case-insensitive for basic matching)
-    final filteredProducts = allProducts.where((p) => 
-      p.category.toLowerCase().contains(categoryName.toLowerCase())
-    ).toSet().toList(); // toSet() to remove duplicates if any
+  State<CategoryScreen> createState() => _CategoryScreenState();
+}
 
+class _CategoryScreenState extends State<CategoryScreen> {
+  List<Product> filteredProducts = [];
+  bool isLoading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchProducts();
+  }
+
+  Future<void> _fetchProducts() async {
+    final products = await ApiService.getProducts();
+    if (mounted) {
+      setState(() {
+        filteredProducts = products.where((p) => 
+          p.category.toLowerCase().contains(widget.categoryName.toLowerCase())
+        ).toList();
+        isLoading = false;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppColors.white,
       appBar: AppBar(
@@ -35,14 +50,16 @@ class CategoryScreen extends StatelessWidget {
           onPressed: () => Navigator.pop(context),
         ),
         title: Text(
-          categoryName.toUpperCase(),
+          widget.categoryName.toUpperCase(),
           style: AppTypography.heading2.copyWith(fontSize: 20, letterSpacing: 2),
         ),
       ),
-      body: filteredProducts.isEmpty
+      body: isLoading 
+          ? const Center(child: CircularProgressIndicator(color: AppColors.black))
+          : filteredProducts.isEmpty
           ? Center(
               child: Text(
-                'No products found in $categoryName',
+                'No products found in ${widget.categoryName}',
                 style: AppTypography.bodyMedium,
               ),
             )

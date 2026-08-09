@@ -2,19 +2,44 @@ import 'package:flutter/material.dart';
 import '../constants/app_colors.dart';
 import '../constants/app_typography.dart';
 import '../widgets/product_card.dart';
-import '../services/mock_data_service.dart';
+import '../services/api_service.dart';
+import '../models/product.dart';
 import 'product_detail_screen.dart';
 
-class ShopScreen extends StatelessWidget {
+class ShopScreen extends StatefulWidget {
   const ShopScreen({super.key});
 
   @override
+  State<ShopScreen> createState() => _ShopScreenState();
+}
+
+class _ShopScreenState extends State<ShopScreen> {
+  List<Product> trending = [];
+  List<Product> allProducts = [];
+  bool isLoading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchProducts();
+  }
+
+  Future<void> _fetchProducts() async {
+    final products = await ApiService.getProducts();
+    if (mounted) {
+      setState(() {
+        allProducts = products;
+        trending = products.take(5).toList();
+        isLoading = false;
+      });
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final trending = MockDataService.trendingProducts;
-    final allProducts = [
-      ...MockDataService.newArrivals,
-      ...MockDataService.trendingProducts,
-    ];
+    if (isLoading) {
+      return const Center(child: CircularProgressIndicator(color: AppColors.black));
+    }
 
     return SingleChildScrollView(
       child: Column(
