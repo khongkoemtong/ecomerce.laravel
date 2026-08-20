@@ -147,7 +147,7 @@ function ChatIcon() {
 
 function HomepageShowcase() {
   const { isDark } = useTheme()
-  const { products, isLoading, brands } = useProducts()
+  const { products, isLoading, brands, categories } = useProducts()
   const { addToCart, addToWishlist, removeFromWishlist, isInWishlist } = useCartWishlist()
 
   const arrivalsList = useMemo(() => {
@@ -157,6 +157,22 @@ function HomepageShowcase() {
   const displayBrands = useMemo(() => {
     return brands.length > 0 ? brands : brandLogos
   }, [brands])
+
+  const displayCategories = useMemo(() => {
+    if (categories && categories.length > 0) {
+      return categories.map(cat => ({
+        name: cat.name,
+        img: cat.image || 'https://images.unsplash.com/photo-1515886657613-9f3515b0c78f?auto=format&fit=crop&w=600&q=80',
+        link: `/shop?category=${encodeURIComponent(cat.name)}`
+      }))
+    }
+    return [
+      { name: 'New Season', img: 'https://images.unsplash.com/photo-1515886657613-9f3515b0c78f?auto=format&fit=crop&w=600&q=80', link: '/shop?category=New%20Season' },
+      { name: 'Outerwear', img: 'https://images.unsplash.com/photo-1591047139829-d91aecb6caea?auto=format&fit=crop&w=600&q=80', link: '/shop?category=Outerwear' },
+      { name: 'Footwear', img: 'https://images.unsplash.com/photo-1543163521-1bf539c55dd2?auto=format&fit=crop&w=600&q=80', link: '/shop?category=Footwear' },
+      { name: 'Accessories', img: 'https://images.unsplash.com/photo-1584917865442-de89df76afd3?auto=format&fit=crop&w=600&q=80', link: '/shop?category=Accessories' }
+    ]
+  }, [categories])
   const [activeSlide, setActiveSlide] = useState(0)
   const [isTickerPaused, setIsTickerPaused] = useState(false)
   const tickerContentRef = useRef(null)
@@ -499,12 +515,7 @@ function HomepageShowcase() {
             </div>
 
             <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-              {[
-                { name: 'The Essentials', img: 'https://images.unsplash.com/photo-1434389678232-0694a5006d04?auto=format&fit=crop&w=600&q=80', link: '/shop?category=Men' },
-                { name: 'Statement Pieces', img: 'https://images.unsplash.com/photo-1550614000-4b95d4662d55?auto=format&fit=crop&w=600&q=80', link: '/shop?category=Women' },
-                { name: 'Accessories', img: 'https://images.unsplash.com/photo-1548036328-c9fa89d128fa?auto=format&fit=crop&w=600&q=80', link: '/shop?category=Accessories' },
-                { name: 'Footwear', img: 'https://images.unsplash.com/photo-1549298916-b41d501d3772?auto=format&fit=crop&w=600&q=80', link: '/shop' }
-              ].map((cat, i) => (
+              {displayCategories.map((cat, i) => (
                 <Link to={cat.link} key={i} className={`group relative h-96 overflow-hidden border transition-all duration-300 ${isDark ? 'border-white/10 hover:border-amber-500/50' : 'border-black/10 hover:border-amber-600/50'}`}>
                   <img src={cat.img} alt={cat.name} className="h-full w-full object-cover transition duration-700 group-hover:scale-105" />
                   <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent" />

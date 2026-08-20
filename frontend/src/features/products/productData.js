@@ -214,21 +214,28 @@ export const products = [
 ];
 
 export const getProductCategories = (product) => {
+  if (!product) return []
   const id = product.id
   const cat = product.category
   const list = []
 
   // Women Products
-  if (id === 'ivory-slip-dress' || id === 'minimal-accent-heel' || id === 'tailored-wool-trousers' || id === 'cashmere-turtleneck' || id === 'classic-trench-coat' || id === 'silk-tailored-blazer' || id === 'gold-hoop-earrings') {
+  if (id === 'ivory-slip-dress' || id === 'minimal-accent-heel' || id === 'tailored-wool-trousers' || id === 'cashmere-turtleneck' || id === 'classic-trench-coat' || id === 'silk-tailored-blazer' || id === 'gold-hoop-earrings' || cat === 'New Season' || cat === 'Outerwear' || cat === 'Dresses' || cat === 'Clothing') {
     list.push('Women')
   }
   // Men Products
-  if (id === 'sculptural-wool-overcoat' || id === 'polished-leather-boots' || id === 'cashmere-turtleneck' || id === 'tailored-wool-trousers' || id === 'suede-chelsea-boots' || id === 'knit-polo-shirt') {
+  if (id === 'sculptural-wool-overcoat' || id === 'polished-leather-boots' || id === 'cashmere-turtleneck' || id === 'tailored-wool-trousers' || id === 'suede-chelsea-boots' || id === 'knit-polo-shirt' || cat === 'New Season' || cat === 'Outerwear' || cat === 'Footwear') {
     list.push('Men')
   }
   // Accessories Products
-  if (cat === 'Accessories' || id === 'structured-leather-bag' || id === 'minimal-accent-heel' || id === 'gold-hoop-earrings') {
+  if (cat === 'Accessories' || cat === 'Bags' || cat === 'Jewelry' || id === 'structured-leather-bag' || id === 'minimal-accent-heel' || id === 'gold-hoop-earrings') {
     list.push('Accessories')
   }
+
+  // Fallback: If product matched none of the specific rules above, include it in main shop lists
+  if (list.length === 0) {
+    list.push('Women', 'Men')
+  }
+
   return list
 }

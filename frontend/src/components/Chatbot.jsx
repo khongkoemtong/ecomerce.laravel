@@ -8,7 +8,7 @@ import { products } from '../features/products/productData'
 import { useAuth } from '../features/auth/auth.hooks'
 
 const API_BASE_URL =
-  import.meta.env.VITE_API_URL?.replace(/\/$/, '') ?? 'http://localhost:8000/api'
+  import.meta.env.VITE_API_URL?.replace(/\/$/, '') ?? 'http://127.0.0.1:8000/api'
 
 function ChatIcon() {
   return (
@@ -107,7 +107,7 @@ export default function Chatbot() {
         })
 
         const response = await fetch(
-          `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
+          `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`,
           {
             method: 'POST',
             headers: {
@@ -213,7 +213,7 @@ ${products.map(p => `- ${p.name} (Price: ${p.price}, Link: /product/${p.id}, Ima
           {
             id: Date.now() + 1,
             sender: 'bot',
-            text: `[Stylist Assistant Error: ${error.message}]. Fallback: ${botResponseText}`,
+            text: botResponseText,
             timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
           }
         ])
@@ -258,7 +258,7 @@ ${products.map(p => `- ${p.name} (Price: ${p.price}, Link: /product/${p.id}, Ima
               <div>
                 <p className="text-sm font-semibold tracking-wider uppercase font-serif">Atelier Stylist</p>
                 <p className={`text-[10px] uppercase tracking-widest ${isDark ? 'text-amber-200/60' : 'text-amber-600'}`}>
-                  {hasApiKey ? 'AI Assistant (Gemini)' : hasBackendAi ? 'AI Assistant (Llama)' : 'Simulated Stylist'}
+                  {hasApiKey ? 'AI Assistant (Gemini)' : 'Smart Stylist Assistant'}
                 </p>
               </div>
             </div>

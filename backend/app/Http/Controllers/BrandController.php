@@ -9,10 +9,13 @@ use Illuminate\Support\Facades\Validator;
 class BrandController extends Controller
 {
     public function index (){
+        $brands = BrandModel::all();
         return response()->json([
-            'succcess'=>true,
+            'success'=>true,
             'message'=>'get all data ',
-            'Brand '=> BrandModel::all(),
+            'brands'=> $brands,
+            'brand'=> $brands,
+            'Brand '=> $brands,
         ]);
 
     }

@@ -16,6 +16,7 @@ use App\Http\Controllers\ShippingController;
 use App\Http\Controllers\UserController;
 use App\Http\Controllers\WishListController;
 use App\Http\Controllers\ChatController;
+use App\Http\Controllers\DashboardController;
 
 Route::post('/register',[AuthController::class,'Register'])->middleware('throttle:register');
 Route::post('/login',[AuthController::class,"login"]);
@@ -24,6 +25,22 @@ Route::post('/chat', [ChatController::class, 'chat']);
 Route::apiResource('categories', CategoryController::class)->only(['index', 'show']);
 Route::apiResource('brands', BrandController::class)->only(['index', 'show']);
 Route::apiResource('products', ProductController::class)->only(['index', 'show']);
+
+// Public / Dev Order Line endpoints
+Route::get('/orders-list', [OrderController::class, 'getOrderLineData']);
+Route::post('/orders-list/create', [OrderController::class, 'createAdminOrder']);
+Route::put('/orders-list/{id}/status', [OrderController::class, 'updateOrderStatus']);
+
+// Public / Dev Dashboard endpoints
+Route::prefix('dashboard')->group(function () {
+    Route::get('/', [DashboardController::class, 'index']);
+    Route::get('/metrics', [DashboardController::class, 'getMetrics']);
+    Route::get('/stock-chart', [DashboardController::class, 'getStockChart']);
+    Route::get('/tag-products', [DashboardController::class, 'getTagProducts']);
+    Route::get('/sales-orders', [DashboardController::class, 'getSalesOrders']);
+    Route::get('/restock-recommendations', [DashboardController::class, 'getRestockRecommendations']);
+});
+
 
 
 Route::middleware('auth:sanctum')->group(function(){
@@ -49,4 +66,5 @@ Route::middleware('auth:sanctum')->group(function(){
         Route::apiResource('shippings',ShippingController::class);
     });
 });
+
    

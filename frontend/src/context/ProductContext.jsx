@@ -3,7 +3,8 @@ import { createContext, useContext, useState, useEffect } from 'react'
 const ProductContext = createContext(null)
 
 const API_BASE_URL =
-  import.meta.env.VITE_API_URL?.replace(/\/$/, '') ?? 'http://localhost:8000/api'
+  import.meta.env.VITE_API_URL?.replace(/\/$/, '') ?? 'http://127.0.0.1:8000/api'
+const BACKEND_URL = API_BASE_URL.replace(/\/api$/, '')
 
 export function ProductProvider({ children }) {
   const [products, setProducts] = useState([])
@@ -22,8 +23,18 @@ export function ProductProvider({ children }) {
         const catData = await catRes.json()
         const fetchedCategories = Array.isArray(catData) 
           ? catData 
-          : (Array.isArray(catData.categories) ? catData.categories : (Array.isArray(catData.categories?.data) ? catData.categories.data : []))
-        setCategories(fetchedCategories)
+          : (Array.isArray(catData.categories) 
+              ? catData.categories 
+              : (Array.isArray(catData.category)
+                  ? catData.category
+                  : (Array.isArray(catData.categories?.data) ? catData.categories.data : [])))
+        const mappedCategories = fetchedCategories.map(c => ({
+          ...c,
+          image: c.image 
+            ? (c.image.startsWith('http') ? c.image : `${BACKEND_URL}${c.image}`)
+            : 'https://images.unsplash.com/photo-1515886657613-9f3515b0c78f?auto=format&fit=crop&w=1200&q=80'
+        }))
+        setCategories(mappedCategories)
 
         // Fetch Brands
         const brandRes = await fetch(`${API_BASE_URL}/brands`)
@@ -32,9 +43,11 @@ export function ProductProvider({ children }) {
           ? brandData
           : (Array.isArray(brandData.brands) 
               ? brandData.brands 
-              : (Array.isArray(brandData['Brand ']) 
-                  ? brandData['Brand '] 
-                  : (Array.isArray(brandData.brands?.data) ? brandData.brands.data : [])))
+              : (Array.isArray(brandData.brand)
+                  ? brandData.brand
+                  : (Array.isArray(brandData['Brand ']) 
+                      ? brandData['Brand '] 
+                      : (Array.isArray(brandData.brands?.data) ? brandData.brands.data : []))))
         const mappedBrands = fetchedBrands.map(b => ({
           ...b,
           image: b.logo || 'https://images.unsplash.com/photo-1591047139829-d91aecb6caea?auto=format&fit=crop&w=900&q=80'
@@ -46,14 +59,19 @@ export function ProductProvider({ children }) {
         const prodData = await prodRes.json()
         
         let rawProducts = []
-        if (prodData && prodData.products) {
-          rawProducts = Array.isArray(prodData.products) 
-            ? prodData.products 
-            : (Array.isArray(prodData.products.data) ? prodData.products.data : [])
+        if (prodData) {
+          if (Array.isArray(prodData)) {
+            rawProducts = prodData
+          } else if (Array.isArray(prodData.products)) {
+            rawProducts = prodData.products
+          } else if (Array.isArray(prodData.products?.data)) {
+            rawProducts = prodData.products.data
+          } else if (Array.isArray(prodData.data)) {
+            rawProducts = prodData.data
+          }
         }
 
         // Map backend product data to frontend structure
-        const BACKEND_URL = API_BASE_URL.replace(/\/api$/, '')
         const mappedProducts = rawProducts.map(p => {
           // Resolve category name
           const catObj = fetchedCategories.find(c => Number(c.id) === Number(p.category_id))

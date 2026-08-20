@@ -1,13 +1,9 @@
-import { Outlet, useLocation } from 'react-router-dom';
+import { Outlet } from 'react-router-dom';
 import { useState, useEffect } from 'react';
 import Sidebar from '../components/layout/Sidebar';
 import Header from '../components/layout/Header';
-import RightSidebar from '../components/layout/RightSidebar';
 
 export default function MainLayout() {
-  const location = useLocation();
-  const isDashboard = location.pathname === '/';
-
   const [isDark, setIsDark] = useState(() => {
     if (typeof window !== 'undefined') {
       return document.documentElement.classList.contains('dark') ||
@@ -17,7 +13,6 @@ export default function MainLayout() {
   });
 
   const [isLeftOpen, setIsLeftOpen] = useState(true);
-  const [isRightOpen, setIsRightOpen] = useState(true);
 
   useEffect(() => {
     if (isDark) {
@@ -38,15 +33,12 @@ export default function MainLayout() {
           isDark={isDark} 
           toggleDark={toggleDark} 
           toggleLeft={() => setIsLeftOpen(!isLeftOpen)}
-          toggleRight={() => setIsRightOpen(!isRightOpen)} 
-          showRightToggle={isDashboard}
+          showRightToggle={false}
         />
         <div className="flex-1">
-          <Outlet context={{ isSidebarOpen: isLeftOpen, isRightSidebarOpen: isDashboard ? isRightOpen : false }} />
+          <Outlet context={{ isSidebarOpen: isLeftOpen, isRightSidebarOpen: false }} />
         </div>
       </main>
-
-      {isDashboard && <RightSidebar isOpen={isRightOpen} setIsOpen={setIsRightOpen} />}
     </div>
   );
 }
