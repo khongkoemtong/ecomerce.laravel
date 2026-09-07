@@ -146,8 +146,6 @@ export function ProductProvider({ children }) {
             discountPercent,
             discountPrice: discountPriceVal,
             rawPrice: originalPriceVal,
-            rawFinalPrice: discountPriceVal || originalPriceVal,
-            stock: Number(p.stock_qty ?? 10),
             stock: Number(p.stock_qty ?? 0),
             isOutOfStock: Number(p.stock_qty ?? 0) <= 0,
             image: imageUrl,

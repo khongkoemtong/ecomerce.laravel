@@ -63,10 +63,6 @@ function WishlistPage() {
                   }`}
                 >
                   {/* Top-Left: Discount Percentage Badge */}
-                  <DiscountBadge
-                    discount={discountPercent}
-                    className="absolute top-2 left-2"
-                  />
                   {discountPercent > 0 && !isOutOfStock && (
                     <DiscountBadge
                       discount={discountPercent}
@@ -102,15 +98,10 @@ function WishlistPage() {
                     onClick={(e) => {
                       e.preventDefault()
                       e.stopPropagation()
-                      addToCart(item, 'S', item.colors[0], 1)
                       if (!isOutOfStock) {
                         addToCart(item, 'S', item.colors[0], 1)
                       }
                     }}
-                    className={`absolute left-3 bottom-3 z-10 flex h-8 w-8 items-center justify-center rounded-full border transition cursor-pointer shadow-sm opacity-0 group-hover:opacity-100 transition-all duration-300 ${
-                      isDark
-                        ? 'border-white/10 bg-black/80 text-stone-300 hover:bg-black hover:text-white'
-                        : 'border-black/10 bg-white/90 text-stone-700 hover:bg-white hover:text-black'
                     className={`absolute left-3 bottom-3 z-10 flex h-8 w-8 items-center justify-center rounded-full border transition cursor-pointer shadow-sm ${
                       isOutOfStock
                         ? "border-white/5 bg-black/40 text-stone-600 cursor-not-allowed opacity-40"
@@ -118,7 +109,6 @@ function WishlistPage() {
                           ? 'border-white/10 bg-black/80 text-stone-300 hover:bg-black hover:text-white opacity-0 group-hover:opacity-100 transition-all duration-300'
                           : 'border-black/10 bg-white/90 text-stone-700 hover:bg-white hover:text-black opacity-0 group-hover:opacity-100 transition-all duration-300'
                     }`}
-                    aria-label="Add to Bag"
                     aria-label={isOutOfStock ? "Sold Out" : "Add to Bag"}
                   >
                     <IoBagHandleOutline className="h-4 w-4" />
@@ -130,7 +120,6 @@ function WishlistPage() {
                       <img
                         src={item.image}
                         alt={item.name}
-                        className="h-56 w-full object-cover transition duration-500 group-hover:scale-105 sm:h-72"
                         className={`h-56 w-full object-cover transition duration-500 group-hover:scale-105 sm:h-72 ${
                           isOutOfStock ? 'grayscale-[0.3] opacity-85' : ''
                         }`}
@@ -145,7 +134,6 @@ function WishlistPage() {
                       }`}>
                         {item.name}
                       </h3>
-                      {discountPercent > 0 ? (
                       {isOutOfStock ? (
                         <div className="mt-2 flex items-center gap-2">
                           <span className="text-xs font-semibold text-rose-500">
@@ -165,7 +153,6 @@ function WishlistPage() {
                           </span>
                         </div>
                       ) : (
-                        <p className={`mt-2 text-xs font-semibold ${isDark ? 'text-stone-300' : 'text-stone-705'}`}>
                         <p className={`mt-2 text-xs font-semibold ${isDark ? 'text-stone-300' : 'text-stone-700'}`}>
                           {item.price}
                         </p>

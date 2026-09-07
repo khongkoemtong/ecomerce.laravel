@@ -560,7 +560,6 @@ class OrderController extends Controller
             ], 401);
         }
 
-        // 2. Resolve or Create Address
         // 2. Resolve Products and Validate Stock
         $resolvedProducts = [];
         foreach ($items as $item) {
@@ -639,12 +638,6 @@ class OrderController extends Controller
             'is_default' => 1,
         ]);
 
-        // 3. Create Order
-        $orderNumber = $this->generateOrderNumber();
-        $subtotal = (float) $request->input('subtotal', 0);
-        $discount = (float) $request->input('discount', 0);
-        $shippingFee = (float) $request->input('shipping_fee', 0);
-        $total = (float) $request->input('total', max(0, $subtotal - $discount + $shippingFee));
         // 4. Create Order & Deduct Stock Atomically
         try {
             $order = DB::transaction(function () use ($request, $user, $address, $resolvedProducts) {
@@ -654,18 +647,6 @@ class OrderController extends Controller
                 $shippingFee = (float) $request->input('shipping_fee', 0);
                 $total = (float) $request->input('total', max(0, $subtotal - $discount + $shippingFee));
 
-        $order = OrderModel::create([
-            'user_id' => $user->id,
-            'address_id' => $address->id,
-            'order_number' => $orderNumber,
-            'subtotal' => $subtotal,
-            'discount' => $discount,
-            'shipping_fee' => $shippingFee,
-            'total' => $total,
-            'payment_status' => OrderModel::PAYMENT_STATUS_PENDING,
-            'order_status' => OrderModel::ORDER_STATUS_PENDING,
-            'payment_method' => $request->input('payment_method', 'cash_on_delivery'),
-        ]);
                 $order = OrderModel::create([
                     'user_id' => $user->id,
                     'address_id' => $address->id,
@@ -679,23 +660,6 @@ class OrderController extends Controller
                     'payment_method' => $request->input('payment_method', 'cash_on_delivery'),
                 ]);
 
-        // 4. Create Order Items & Reduce Stock
-        foreach ($items as $item) {
-            $product = null;
-            if (!empty($item['dbId']) || !empty($item['product_id']) || !empty($item['id'])) {
-                $prodId = $item['dbId'] ?? $item['product_id'] ?? $item['id'];
-                if (is_numeric($prodId)) {
-                    $product = ProductModel::find($prodId);
-                } else {
-                    $product = ProductModel::where('slug', $prodId)->first();
-                }
-            }
-            if (!$product && !empty($item['sku'])) {
-                $product = ProductModel::where('sku', $item['sku'])->first();
-            }
-            if (!$product && !empty($item['name'])) {
-                $product = ProductModel::where('name', $item['name'])->first();
-            }
                 foreach ($resolvedProducts as $entry) {
                     $item = $entry['item'];
                     $qty = $entry['qty'];
@@ -706,21 +670,10 @@ class OrderController extends Controller
                         throw new \RuntimeException('Insufficient stock for product "' . ($product ? $product->name : 'Item') . '".');
                     }
 
-            $qty = max(1, (int) ($item['quantity'] ?? 1));
-            $price = (float) ($item['price'] ?? ($product ? ($product->discount_price ?? $product->price) : 0));
-            $itemTotal = $price * $qty;
-            $productName = $item['name'] ?? ($product ? $product->name : 'Product Item');
                     $price = (float) ($item['price'] ?? ($product->discount_price ?? $product->price));
                     $itemTotal = $price * $qty;
                     $productName = $item['name'] ?? $product->name;
 
-            // Format size / color variant suffix if present
-            $variantInfo = [];
-            if (!empty($item['size'])) $variantInfo[] = 'Size: ' . $item['size'];
-            if (!empty($item['color'])) $variantInfo[] = 'Color: ' . $item['color'];
-            if (!empty($variantInfo)) {
-                $productName .= ' (' . implode(', ', $variantInfo) . ')';
-            }
                     // Format size / color variant suffix if present
                     $variantInfo = [];
                     if (!empty($item['size'])) $variantInfo[] = 'Size: ' . $item['size'];
@@ -729,14 +682,6 @@ class OrderController extends Controller
                         $productName .= ' (' . implode(', ', $variantInfo) . ')';
                     }
 
-            OrderItemModel::create([
-                'order_id' => $order->id,
-                'product_id' => $product ? $product->id : 1,
-                'product_name' => $productName,
-                'price' => $price,
-                'quantity' => $qty,
-                'total' => $itemTotal,
-            ]);
                     OrderItemModel::create([
                         'order_id' => $order->id,
                         'product_id' => $product->id,
@@ -746,17 +691,10 @@ class OrderController extends Controller
                         'total' => $itemTotal,
                     ]);
 
-            if ($product) {
-                $product->decrement('stock_qty', min($qty, $product->stock_qty));
-            }
-        }
                     // Deduct stock safely
                     $product->decrement('stock_qty', $qty);
                 }
 
-        // Increment promotion usage count if promo code was used
-        if ($request->filled('promo_code')) {
-            \App\Models\PromotionModel::where('code', strtoupper($request->promo_code))->increment('usage_count');
                 // Increment promotion usage count if promo code was used
                 if ($request->filled('promo_code')) {
                     \App\Models\PromotionModel::where('code', strtoupper($request->promo_code))->increment('usage_count');

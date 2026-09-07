@@ -750,10 +750,6 @@ function ProfilePage() {
                         }`}
                       >
                         {/* Top-Left: Discount Percentage Badge */}
-                        <DiscountBadge
-                          discount={discountPercent}
-                          className="absolute top-2 left-2"
-                        />
                         {discountPercent > 0 && !isOutOfStock && (
                           <DiscountBadge
                             discount={discountPercent}
@@ -788,15 +784,10 @@ function ProfilePage() {
                           onClick={(e) => {
                             e.preventDefault()
                             e.stopPropagation()
-                            addToCart(item, 'S', item.colors?.[0] || 'Black', 1)
                             if (!isOutOfStock) {
                               addToCart(item, 'S', item.colors?.[0] || 'Black', 1)
                             }
                           }}
-                          className={`absolute left-2 bottom-2 z-20 flex h-7 w-7 items-center justify-center rounded-full border transition cursor-pointer shadow-sm opacity-0 group-hover:opacity-100 transition-all duration-300 ${
-                            isDark
-                              ? 'border-white/10 bg-black/80 text-stone-300 hover:bg-black hover:text-white'
-                              : 'border-black/10 bg-white/90 text-stone-700 hover:bg-white hover:text-black'
                           className={`absolute left-2 bottom-2 z-20 flex h-7 w-7 items-center justify-center rounded-full border transition cursor-pointer shadow-sm ${
                             isOutOfStock
                               ? "border-white/5 bg-black/40 text-stone-600 cursor-not-allowed opacity-40"
@@ -804,7 +795,6 @@ function ProfilePage() {
                                 ? 'border-white/10 bg-black/80 text-stone-300 hover:bg-black hover:text-white opacity-0 group-hover:opacity-100 transition-all duration-300'
                                 : 'border-black/10 bg-white/90 text-stone-700 hover:bg-white hover:text-black opacity-0 group-hover:opacity-100 transition-all duration-300'
                           }`}
-                          aria-label="Add to Bag"
                           aria-label={isOutOfStock ? "Sold Out" : "Add to Bag"}
                         >
                           <IoBagHandleOutline className="h-3.5 w-3.5" />
@@ -815,7 +805,6 @@ function ProfilePage() {
                             <img
                               src={item.image}
                               alt={item.name}
-                              className="h-full w-full object-cover transition duration-500 group-hover:scale-105"
                               className={`h-full w-full object-cover transition duration-500 group-hover:scale-105 ${
                                 isOutOfStock ? 'grayscale-[0.3] opacity-85' : ''
                               }`}
@@ -827,7 +816,6 @@ function ProfilePage() {
                             }`}>
                               {item.name}
                             </h3>
-                            {discountPercent > 0 ? (
                             {isOutOfStock ? (
                               <div className="mt-1.5 flex items-center gap-2">
                                 <span className="text-xs font-semibold text-rose-500">
@@ -847,7 +835,6 @@ function ProfilePage() {
                                 </span>
                               </div>
                             ) : (
-                              <p className={`mt-1.5 text-xs font-semibold ${isDark ? 'text-stone-300' : 'text-stone-705'}`}>
                               <p className={`mt-1.5 text-xs font-semibold ${isDark ? 'text-stone-300' : 'text-stone-700'}`}>
                                 {item.price}
                               </p>

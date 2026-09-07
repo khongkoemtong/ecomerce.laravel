@@ -99,12 +99,10 @@ function ProductDetailPage() {
           
           {/* Left Column: Product Images */}
           <div className="space-y-6">
-            <div className={`overflow-hidden border ${isDark ? 'border-white/10 bg-stone-950/40' : 'border-black/10 bg-[#ece7df]/40'}`}>
             <div className={`overflow-hidden border relative ${isDark ? 'border-white/10 bg-stone-950/40' : 'border-black/10 bg-[#ece7df]/40'}`}>
               <img
                 src={product.image}
                 alt={product.name}
-                className="w-full object-cover max-h-[640px]"
                 className={`w-full object-cover max-h-[640px] ${isOutOfStock ? 'grayscale-[30%] opacity-90' : ''}`}
               />
 
@@ -148,10 +146,6 @@ function ProductDetailPage() {
                 {product.name}
               </h1>
               
-              {/* Price */}
-              <p className={`mt-4 text-2xl font-serif ${isDark ? 'text-amber-300' : 'text-amber-700'}`}>
-                {product.price}
-              </p>
               {/* Price & Stock Info */}
               <div className="mt-4 flex flex-wrap items-center gap-4">
                 <p className={`text-2xl font-serif ${isDark ? 'text-amber-300' : 'text-amber-700'}`}>
@@ -238,7 +232,6 @@ function ProductDetailPage() {
                 type="button"
                 disabled={isOutOfStock}
                 onClick={() => {
-                  addToCart(product, selectedSize, selectedColor, 1)
                   const res = addToCart(product, selectedSize, selectedColor, 1)
                   if (res?.success === false) {
                     setFeedbackMessage(res.message || 'Cannot add item to bag.')
@@ -248,13 +241,8 @@ function ProductDetailPage() {
                     setIsErrorFeedback(false)
                   }
                   setAddedToBagFeedback(true)
-                  setTimeout(() => setAddedToBagFeedback(false), 2000)
                   setTimeout(() => setAddedToBagFeedback(false), 2500)
                 }}
-                className={`w-full py-4 text-xs font-semibold uppercase tracking-[0.35em] transition shadow-[0_8px_30px_rgba(0,0,0,0.1)] cursor-pointer ${
-                  isDark
-                    ? 'bg-amber-500 text-black hover:bg-amber-400'
-                    : 'bg-stone-900 text-white hover:bg-stone-800'
                 className={`w-full py-4 text-xs font-semibold uppercase tracking-[0.35em] transition shadow-[0_8px_30px_rgba(0,0,0,0.1)] ${
                   isOutOfStock
                     ? 'bg-stone-500/20 text-stone-500 cursor-not-allowed border border-stone-500/30'
@@ -263,13 +251,10 @@ function ProductDetailPage() {
                       : 'bg-stone-900 text-white hover:bg-stone-800 cursor-pointer'
                 }`}
               >
-                Add to Bag
                 {isOutOfStock ? 'Out of Stock' : 'Add to Bag'}
               </button>
               
               {addedToBagFeedback && (
-                <p className="text-xs text-emerald-600 dark:text-emerald-400 font-semibold uppercase tracking-widest text-center mt-1">
-                  Added to Bag
                 <p className={`text-xs font-semibold uppercase tracking-widest text-center mt-1 ${
                   isErrorFeedback ? 'text-rose-500' : 'text-emerald-600 dark:text-emerald-400'
                 }`}>
@@ -377,17 +362,12 @@ function ProductDetailPage() {
                       <img
                         src={item.image}
                         alt={item.name}
-                        className="h-56 w-full object-cover transition duration-500 group-hover:scale-105 sm:h-72"
                         className={`h-56 w-full object-cover transition duration-500 group-hover:scale-105 sm:h-72 ${
                           isOutOfStock ? 'grayscale-[0.3] opacity-85' : ''
                         }`}
                       />
 
                       {/* Top-Left: Discount Percentage Badge */}
-                      <DiscountBadge
-                        discount={discountPercent}
-                        className="absolute top-2 left-2"
-                      />
                       {discountPercent > 0 && !isOutOfStock && (
                         <DiscountBadge
                           discount={discountPercent}
@@ -409,15 +389,10 @@ function ProductDetailPage() {
                         onClick={(e) => {
                           e.preventDefault()
                           e.stopPropagation()
-                          addToCart(item, 'S', item.colors[0], 1)
                           if (!isOutOfStock) {
                             addToCart(item, 'S', item.colors[0], 1)
                           }
                         }}
-                        className={`absolute left-3 bottom-3 z-10 flex h-8.5 w-8.5 items-center justify-center rounded-full border transition shadow-md hover:scale-110 cursor-pointer ${
-                          isDark
-                            ? "border-white/10 bg-black/80 text-stone-300 hover:bg-black hover:text-white"
-                            : "border-black/10 bg-white/90 text-stone-700 hover:bg-white hover:text-black"
                         className={`absolute left-3 bottom-3 z-10 flex h-8.5 w-8.5 items-center justify-center rounded-full border transition shadow-md cursor-pointer ${
                           isOutOfStock
                             ? "border-white/5 bg-black/40 text-stone-600 cursor-not-allowed opacity-40"
@@ -425,7 +400,6 @@ function ProductDetailPage() {
                               ? "border-white/10 bg-black/80 text-stone-300 hover:bg-black hover:text-white hover:scale-110"
                               : "border-black/10 bg-white/90 text-stone-700 hover:bg-white hover:text-black hover:scale-110"
                         }`}
-                        aria-label="Add to Bag"
                         aria-label={isOutOfStock ? "Sold Out" : "Add to Bag"}
                       >
                         <IoBagHandleOutline className="h-3.5 w-3.5" />
@@ -463,7 +437,6 @@ function ProductDetailPage() {
                       }`}>
                         {item.name}
                       </h3>
-                      {discountPercent > 0 ? (
                       {isOutOfStock ? (
                         <div className="mt-2 flex items-center gap-2">
                           <span className="text-xs font-semibold text-rose-500">
@@ -483,14 +456,12 @@ function ProductDetailPage() {
                           </span>
                         </div>
                       ) : (
-                        <p className={`mt-2 text-xs font-semibold ${isDark ? 'text-stone-300' : 'text-stone-705'}`}>
                         <p className={`mt-2 text-xs font-semibold ${isDark ? 'text-stone-300' : 'text-stone-700'}`}>
                           {item.price}
                         </p>
                       )}
                     </div>
                   </Link>
-                );
                 )
               })}
             </div>

@@ -62,7 +62,6 @@ export function CartWishlistProvider({ children }) {
 
     setCart((prevCart) => {
       const existingItemIndex = prevCart.findIndex(
-        (item) => item.product.id === product.id && item.size === size && item.color === color
         (item) => (item.product.id === product.id || item.product.dbId === product.dbId) && item.size === size && item.color === color
       )
 
@@ -86,7 +85,6 @@ export function CartWishlistProvider({ children }) {
         }
 
         const newCart = [...prevCart]
-        newCart[existingItemIndex].quantity += quantity
         newCart[existingItemIndex].quantity = newQty
         return newCart
       }
@@ -109,7 +107,6 @@ export function CartWishlistProvider({ children }) {
   const removeFromCart = (productId, size, color) => {
     setCart((prevCart) =>
       prevCart.filter(
-        (item) => !(item.product.id === productId && item.size === size && item.color === color)
         (item) => !( (item.product.id === productId || item.product.dbId === productId) && item.size === size && item.color === color)
       )
     )
@@ -118,18 +115,12 @@ export function CartWishlistProvider({ children }) {
   const updateCartQuantity = (productId, size, color, quantity) => {
     if (quantity <= 0) {
       removeFromCart(productId, size, color)
-      return
       return { success: true }
     }
 
     let result = { success: true }
 
     setCart((prevCart) =>
-      prevCart.map((item) =>
-        item.product.id === productId && item.size === size && item.color === color
-          ? { ...item, quantity }
-          : item
-      )
       prevCart.map((item) => {
         if ((item.product.id === productId || item.product.dbId === productId) && item.size === size && item.color === color) {
           const availableStock = typeof item.product.stock === 'number' 

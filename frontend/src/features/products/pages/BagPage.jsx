@@ -918,17 +918,11 @@ function BagPage() {
                   return (
                     <div 
                       key={`${item.product.id}-${item.size}-${item.color}`}
-                      className="pt-3 first:pt-0 flex items-center justify-between gap-3"
                       className={`pt-3 first:pt-0 flex items-center justify-between gap-3 ${
                         isItemOutOfStock ? 'opacity-75 bg-rose-500/5 p-2 rounded-xl' : ''
                       }`}
                     >
                       <div className="flex items-center gap-3 min-w-0">
-                        <img 
-                          src={item.product.image} 
-                          alt={item.product.name}
-                          className="w-14 h-14 rounded-xl object-cover border border-slate-200 dark:border-white/10 shrink-0"
-                        />
                         <div className="relative shrink-0">
                           <img 
                             src={item.product.image} 
@@ -973,8 +967,6 @@ function BagPage() {
                               </button>
                               <button
                                 type="button"
-                                onClick={() => updateCartQuantity(item.product.id, item.size, item.color, item.quantity + 1)}
-                                className="w-5 h-5 rounded border flex items-center justify-center text-[10px] text-slate-500 hover:bg-slate-100 dark:hover:bg-white/10 cursor-pointer"
                                 disabled={isItemOutOfStock || item.quantity >= itemStock}
                                 onClick={() => {
                                   const res = updateCartQuantity(item.product.id, item.size, item.color, item.quantity + 1)
@@ -992,14 +984,12 @@ function BagPage() {
                       </div>
 
                       <div className="text-right shrink-0">
-                        <p className="text-sm font-bold text-slate-900 dark:text-white">
                         <p className={`text-sm font-bold ${isItemOutOfStock ? 'line-through text-slate-400' : 'text-slate-900 dark:text-white'}`}>
                           ${itemTotal}
                         </p>
                         <button
                           type="button"
                           onClick={() => removeFromCart(item.product.id, item.size, item.color)}
-                          className="text-xs text-slate-400 hover:text-rose-500 transition cursor-pointer mt-0.5 inline-block"
                           className="text-xs text-rose-500 hover:text-rose-600 font-semibold transition cursor-pointer mt-0.5 inline-block"
                         >
                           Remove
@@ -1137,7 +1127,6 @@ function BagPage() {
               </div>
 
               {/* Place Order Primary Action Button */}
-              {!user ? (
               {cart.some(item => (typeof item.product.stock === 'number' ? item.product.stock : (Number(item.product.stock_qty) || 0)) <= 0) ? (
                 <button
                   type="button"

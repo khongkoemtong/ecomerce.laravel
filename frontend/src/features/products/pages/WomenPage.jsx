@@ -283,9 +283,6 @@ export default function WomenPage() {
                     ? Math.round(((originalVal - currentVal) / originalVal) * 100)
                     : 0;
 
-                  let badge = 'Atelier core'
-                  if (product.id === 'ivory-slip-dress') badge = 'New Arrival'
-                  if (product.id === 'minimal-accent-heel') badge = 'Best Seller'
                   let badge = isOutOfStock ? 'Sold Out' : 'Atelier Core'
                   if (!isOutOfStock) {
                     if (product.id === 'ivory-slip-dress') badge = 'New Arrival'
@@ -307,7 +304,6 @@ export default function WomenPage() {
                           <img
                             src={product.image}
                             alt={product.name}
-                            className="h-64 sm:h-80 w-full object-cover transition duration-500 group-hover:scale-105"
                             className={`h-64 sm:h-80 w-full object-cover transition duration-500 group-hover:scale-105 ${
                               isOutOfStock ? 'grayscale-[0.3] opacity-85' : ''
                             }`}
@@ -315,7 +311,6 @@ export default function WomenPage() {
                         </Link>
 
                         {/* Top-Right Badge */}
-                        <span className="absolute top-3 right-3 bg-black/80 text-white text-[9px] uppercase font-bold tracking-widest px-2.5 py-1 z-10">
                         <span className={`absolute top-3 right-3 text-[9px] uppercase font-bold tracking-widest px-2.5 py-1 z-10 ${
                           isOutOfStock 
                             ? 'bg-stone-950/90 text-rose-400 border border-rose-500/40 shadow-sm backdrop-blur-xs' 
@@ -325,10 +320,6 @@ export default function WomenPage() {
                         </span>
 
                         {/* Top-Left: Discount Percentage Badge */}
-                        <DiscountBadge
-                          discount={discountPercent}
-                          className="absolute top-2 left-2"
-                        />
                         {discountPercent > 0 && !isOutOfStock && (
                           <DiscountBadge
                             discount={discountPercent}
@@ -340,19 +331,12 @@ export default function WomenPage() {
                         <button
                           disabled={isOutOfStock}
                           onClick={() => {
-                            const defaultSize = product.sizes ? product.sizes[0] : 'S'
-                            const defaultColor = product.colors ? product.colors[0] : '#000000'
-                            addToCart(product, defaultSize, defaultColor, 1)
                             if (!isOutOfStock) {
                               const defaultSize = product.sizes ? product.sizes[0] : 'S'
                               const defaultColor = product.colors ? product.colors[0] : '#000000'
                               addToCart(product, defaultSize, defaultColor, 1)
                             }
                           }}
-                          className={`absolute left-3 bottom-3 z-10 flex h-9 w-9 items-center justify-center rounded-full border transition shadow-md hover:scale-110 cursor-pointer opacity-0 group-hover:opacity-100 transition-all duration-300 ${
-                            isDark
-                              ? "border-white/10 bg-black/80 text-stone-300 hover:bg-black hover:text-white"
-                              : "border-black/10 bg-white/90 text-stone-700 hover:bg-white hover:text-black"
                           className={`absolute left-3 bottom-3 z-10 flex h-9 w-9 items-center justify-center rounded-full border transition shadow-md cursor-pointer ${
                             isOutOfStock
                               ? "border-white/5 bg-black/40 text-stone-600 cursor-not-allowed opacity-40"
@@ -360,7 +344,6 @@ export default function WomenPage() {
                                 ? "border-white/10 bg-black/80 text-stone-300 hover:bg-black hover:text-white hover:scale-110 opacity-0 group-hover:opacity-100 transition-all duration-300"
                                 : "border-black/10 bg-white/90 text-stone-700 hover:bg-white hover:text-black hover:scale-110 opacity-0 group-hover:opacity-100 transition-all duration-300"
                           }`}
-                          aria-label="Add to Bag"
                           aria-label={isOutOfStock ? "Sold Out" : "Add to Bag"}
                         >
                           <IoBagHandleOutline className="h-4 w-4" />
@@ -398,7 +381,6 @@ export default function WomenPage() {
                             {product.name}
                           </Link>
                         </h3>
-                        {discountPercent > 0 ? (
                         {isOutOfStock ? (
                           <div className="mt-2 flex items-center gap-2">
                             <span className="text-xs font-semibold text-rose-500">
