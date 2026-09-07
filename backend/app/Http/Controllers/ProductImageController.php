@@ -3,23 +3,13 @@
 namespace App\Http\Controllers;
 
 use App\Models\ProductImageModel;
-use CloudinaryLabs\CloudinaryLaravel\Facades\Cloudinary;
+use App\Traits\HandlesImageUploads;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Validator;
-use Throwable;
 
 class ProductImageController extends Controller
 {
-    private function uploadProductImage($image): string
-    {
-        $upload = Cloudinary::uploadApi()->upload($image->getRealPath(), [
-            'folder' => 'product-images',
-            'resource_type' => 'image',
-        ]);
-
-        return $upload['secure_url'];
-    }
+    use HandlesImageUploads;
 
     public function index()
     {
@@ -34,7 +24,6 @@ class ProductImageController extends Controller
     {
         $validator = Validator::make($request->all(), [
             'product_id' => 'required|integer|exists:products,id',
-            'image' => 'required|image|mimes:jpg,jpeg,png,webp|max:2048',
         ]);
 
         if ($validator->fails()) {
@@ -45,18 +34,18 @@ class ProductImageController extends Controller
             ], 422);
         }
 
-        try {
-            $imageUrl = $this->uploadProductImage($request->file('image'));
-        } catch (Throwable $e) {
-            Log::error('Cloudinary product image upload failed', [
-                'error' => $e->getMessage(),
-            ]);
+        $imageUrl = null;
+        if ($request->hasFile('image')) {
+            $imageUrl = $this->uploadImage($request->file('image'), 'product_images');
+        } elseif ($request->filled('image')) {
+            $imageUrl = $request->input('image');
+        }
 
+        if (!$imageUrl) {
             return response()->json([
                 'success' => false,
-                'message' => 'Image upload failed. Please check your Cloudinary configuration.',
-                'error' => config('app.debug') ? $e->getMessage() : null,
-            ], 500);
+                'message' => 'Please provide an image file or URL.',
+            ], 422);
         }
 
         $productImage = ProductImageModel::create([
@@ -102,7 +91,6 @@ class ProductImageController extends Controller
 
         $validator = Validator::make($request->all(), [
             'product_id' => 'required|integer|exists:products,id',
-            'image' => 'nullable|image|mimes:jpg,jpeg,png,webp|max:2048',
         ]);
 
         if ($validator->fails()) {
@@ -114,22 +102,13 @@ class ProductImageController extends Controller
         }
 
         $imageUrl = $productImage->image;
-
         if ($request->hasFile('image')) {
-            try {
-                $imageUrl = $this->uploadProductImage($request->file('image'));
-            } catch (Throwable $e) {
-                Log::error('Cloudinary product image upload failed', [
-                    'product_image_id' => $productImage->id,
-                    'error' => $e->getMessage(),
-                ]);
-
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Image upload failed. Please check your Cloudinary configuration.',
-                    'error' => config('app.debug') ? $e->getMessage() : null,
-                ], 500);
+            if ($productImage->image) {
+                $this->deleteImage($productImage->image);
             }
+            $imageUrl = $this->uploadImage($request->file('image'), 'product_images');
+        } elseif ($request->filled('image')) {
+            $imageUrl = $request->input('image');
         }
 
         $productImage->update([
@@ -153,6 +132,10 @@ class ProductImageController extends Controller
                 'success' => false,
                 'message' => 'product image not found',
             ], 404);
+        }
+
+        if ($productImage->image) {
+            $this->deleteImage($productImage->image);
         }
 
         $productImage->delete();

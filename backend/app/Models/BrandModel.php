@@ -12,6 +12,10 @@ class BrandModel extends Model
         "slug",
         "logo",
         "status",
-        
     ];
+
+    public function products()
+    {
+        return $this->hasMany(ProductModel::class, 'brand_id');
+    }
 }

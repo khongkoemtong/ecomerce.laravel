@@ -10,6 +10,7 @@ export function ProductProvider({ children }) {
   const [products, setProducts] = useState([])
   const [categories, setCategories] = useState([])
   const [brands, setBrands] = useState([])
+  const [promotions, setPromotions] = useState([])
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState(null)
 
@@ -18,48 +19,63 @@ export function ProductProvider({ children }) {
       setIsLoading(true)
       setError(null)
       try {
-        // Fetch Categories
-        const catRes = await fetch(`${API_BASE_URL}/categories`)
-        const catData = await catRes.json()
-        const fetchedCategories = Array.isArray(catData) 
-          ? catData 
-          : (Array.isArray(catData.categories) 
-              ? catData.categories 
-              : (Array.isArray(catData.category)
-                  ? catData.category
-                  : (Array.isArray(catData.categories?.data) ? catData.categories.data : [])))
-        const mappedCategories = fetchedCategories.map(c => ({
-          ...c,
-          image: c.image 
-            ? (c.image.startsWith('http') ? c.image : `${BACKEND_URL}${c.image}`)
-            : 'https://images.unsplash.com/photo-1515886657613-9f3515b0c78f?auto=format&fit=crop&w=1200&q=80'
-        }))
-        setCategories(mappedCategories)
+        const [catRes, brandRes, prodRes, promoRes] = await Promise.all([
+          fetch(`${API_BASE_URL}/categories`),
+          fetch(`${API_BASE_URL}/brands`),
+          fetch(`${API_BASE_URL}/products?per_page=100`),
+          fetch(`${API_BASE_URL}/promotions?per_page=100`).catch(() => ({ ok: false }))
+        ])
 
-        // Fetch Brands
-        const brandRes = await fetch(`${API_BASE_URL}/brands`)
-        const brandData = await brandRes.json()
-        const fetchedBrands = Array.isArray(brandData)
-          ? brandData
-          : (Array.isArray(brandData.brands) 
-              ? brandData.brands 
-              : (Array.isArray(brandData.brand)
-                  ? brandData.brand
-                  : (Array.isArray(brandData['Brand ']) 
-                      ? brandData['Brand '] 
-                      : (Array.isArray(brandData.brands?.data) ? brandData.brands.data : []))))
-        const mappedBrands = fetchedBrands.map(b => ({
-          ...b,
-          image: b.logo || 'https://images.unsplash.com/photo-1591047139829-d91aecb6caea?auto=format&fit=crop&w=900&q=80'
-        }))
-        setBrands(mappedBrands)
+        // Parse Categories
+        let fetchedCategories = []
+        if (catRes.ok) {
+          const catData = await catRes.json()
+          fetchedCategories = Array.isArray(catData) 
+            ? catData 
+            : (Array.isArray(catData.categories) 
+                ? catData.categories 
+                : (Array.isArray(catData.category)
+                    ? catData.category
+                    : (Array.isArray(catData.categories?.data) ? catData.categories.data : [])))
+          const mappedCategories = fetchedCategories.map(c => ({
+            ...c,
+            image: c.image 
+              ? (c.image.startsWith('http') ? c.image : `${BACKEND_URL}${c.image}`)
+              : 'https://images.unsplash.com/photo-1515886657613-9f3515b0c78f?auto=format&fit=crop&w=1200&q=80'
+          }))
+          setCategories(mappedCategories)
+        }
 
-        // Fetch Products (Fetch a large number to handle client-side filtering/pagination properly, e.g. per_page=100)
-        const prodRes = await fetch(`${API_BASE_URL}/products?per_page=100`)
-        const prodData = await prodRes.json()
-        
+        // Parse Brands
+        let fetchedBrands = []
+        if (brandRes.ok) {
+          const brandData = await brandRes.json()
+          fetchedBrands = Array.isArray(brandData)
+            ? brandData
+            : (Array.isArray(brandData.brands) 
+                ? brandData.brands 
+                : (Array.isArray(brandData.brand)
+                    ? brandData.brand
+                    : (Array.isArray(brandData['Brand ']) 
+                        ? brandData['Brand '] 
+                        : (Array.isArray(brandData.brands?.data) ? brandData.brands.data : []))))
+          const mappedBrands = fetchedBrands.map(b => ({
+            ...b,
+            image: b.logo || 'https://images.unsplash.com/photo-1591047139829-d91aecb6caea?auto=format&fit=crop&w=900&q=80'
+          }))
+          setBrands(mappedBrands)
+        }
+
+        // Parse Promotions
+        if (promoRes && promoRes.ok) {
+          const promoData = await promoRes.json()
+          setPromotions(promoData.promotions || [])
+        }
+
+        // Parse Products
         let rawProducts = []
-        if (prodData) {
+        if (prodRes.ok) {
+          const prodData = await prodRes.json()
           if (Array.isArray(prodData)) {
             rawProducts = prodData
           } else if (Array.isArray(prodData.products)) {
@@ -83,7 +99,7 @@ export function ProductProvider({ children }) {
 
           // Determine sizes based on category/name
           let sizes = ['XS', 'S', 'M', 'L']
-          const lowerName = p.name.toLowerCase()
+          const lowerName = (p.name || '').toLowerCase()
           if (lowerName.includes('shoe') || lowerName.includes('boot') || lowerName.includes('heel')) {
             sizes = ['36', '37', '38', '39', '40', '41', '42']
           } else if (lowerName.includes('bag') || lowerName.includes('jewelry') || lowerName.includes('earring')) {
@@ -104,14 +120,11 @@ export function ProductProvider({ children }) {
             ? (p.image.startsWith('http') ? p.image : `${BACKEND_URL}${p.image}`)
             : 'https://images.unsplash.com/photo-1591047139829-d91aecb6caea?auto=format&fit=crop&w=900&q=80'
 
-          const originalPriceVal = Number(p.price);
-          const hasDbDiscount = p.discount_price !== null && Number(p.discount_price) < originalPriceVal;
-          // Mock a 15% discount for every 3rd product if there is no db discount
-          const mockDiscount = (!p.discount_price && (Number(p.id) % 3 === 0));
+          const originalPriceVal = Number(p.price) || 0;
+          const hasDbDiscount = p.discount_price !== null && Number(p.discount_price) > 0 && Number(p.discount_price) < originalPriceVal;
           
-          const discountPriceVal = hasDbDiscount 
-            ? Number(p.discount_price) 
-            : (mockDiscount ? originalPriceVal * 0.85 : null);
+          const discountPriceVal = hasDbDiscount ? Number(p.discount_price) : null;
+          const discountPercent = hasDbDiscount ? Math.round(((originalPriceVal - discountPriceVal) / originalPriceVal) * 100) : 0;
 
           const finalPriceStr = discountPriceVal 
             ? `$${discountPriceVal.toFixed(2)}` 
@@ -123,11 +136,20 @@ export function ProductProvider({ children }) {
             id: p.slug || String(p.id),
             dbId: p.id,
             name: p.name,
+            sku: p.sku || `SKU-${p.id}`,
             brand: brandName,
             category: categoryName,
             breadcrumbs: `${categoryName.toUpperCase()} / ${p.name.toUpperCase()}`,
             price: finalPriceStr,
             originalPrice: originalPriceStr,
+            hasDiscount: hasDbDiscount,
+            discountPercent,
+            discountPrice: discountPriceVal,
+            rawPrice: originalPriceVal,
+            rawFinalPrice: discountPriceVal || originalPriceVal,
+            stock: Number(p.stock_qty ?? 10),
+            stock: Number(p.stock_qty ?? 0),
+            isOutOfStock: Number(p.stock_qty ?? 0) <= 0,
             image: imageUrl,
             detailImages: [imageUrl],
             colors,
@@ -151,7 +173,7 @@ export function ProductProvider({ children }) {
   }, [])
 
   return (
-    <ProductContext.Provider value={{ products, categories, brands, isLoading, error }}>
+    <ProductContext.Provider value={{ products, categories, brands, promotions, isLoading, error }}>
       {children}
     </ProductContext.Provider>
   )

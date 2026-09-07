@@ -5,75 +5,34 @@ namespace App\Http\Controllers;
 use App\Http\Requests\ProductRequest;
 use App\Http\Resources\ProductResource;
 use App\Models\ProductModel;
-use CloudinaryLabs\CloudinaryLaravel\Facades\Cloudinary;
+use App\Traits\HandlesImageUploads;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Log;
-use RuntimeException;
-use Throwable;
+use Illuminate\Support\Str;
 
 class ProductController extends Controller
 {
-    private function cloudinaryConfigured(): bool
-    {
-        return filled(config('cloudinary.cloud_url'))
-            || (
-                filled(env('CLOUDINARY_CLOUD_NAME'))
-                && filled(env('CLOUDINARY_KEY'))
-                && filled(env('CLOUDINARY_SECRET'))
-            );
-    }
-
-    private function uploadProductImage($image): string
-    {
-        if (!class_exists(Cloudinary::class)) {
-            throw new RuntimeException('Cloudinary package is not installed. Run composer install in the backend directory.');
-        }
-
-        if (!$this->cloudinaryConfigured()) {
-            throw new RuntimeException('Cloudinary credentials are missing. Set CLOUDINARY_URL or CLOUDINARY_CLOUD_NAME, CLOUDINARY_KEY, and CLOUDINARY_SECRET in backend/.env.');
-        }
-
-        $upload = Cloudinary::upload($image->getRealPath(), [
-            'folder' => 'products',
-            'resource_type' => 'image',
-        ]);
-
-        if (method_exists($upload, 'getSecurePath')) {
-            return $upload->getSecurePath();
-        }
-
-        $uploadData = method_exists($upload, 'getResponse') ? $upload->getResponse() : (array) $upload;
-
-        if (!isset($uploadData['secure_url'])) {
-            throw new RuntimeException('Cloudinary upload succeeded but no secure URL was returned.');
-        }
-
-        return $uploadData['secure_url'];
-    }
+    use HandlesImageUploads;
 
     public function store(ProductRequest $request)
     {
         $imageUrl = null;
 
         if ($request->hasFile('image')) {
-            try {
-                $imageUrl = $this->uploadProductImage($request->file('image'));
-            } catch (Throwable $e) {
-                Log::error('Cloudinary product image upload failed', [
-                    'error' => $e->getMessage(),
-                    'configured' => $this->cloudinaryConfigured(),
-                ]);
-
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Image upload failed. Please check your Cloudinary configuration.',
-                    'error' => config('app.debug') ? $e->getMessage() : null,
-                ], 500);
-            }
+            $imageUrl = $this->uploadImage($request->file('image'), 'products');
+        } elseif ($request->filled('image')) {
+            $imageUrl = $request->input('image');
         }
 
         $data = $request->validated();
         unset($data['image']);
+
+        if (empty($data['slug'])) {
+            $data['slug'] = Str::slug($data['name']) . '-' . Str::random(5);
+        }
+
+        if (empty($data['sku'])) {
+            $data['sku'] = 'SKU-' . strtoupper(Str::random(6));
+        }
 
         $product = ProductModel::create([
             ...$data,
@@ -115,28 +74,30 @@ class ProductController extends Controller
             default => $products->latest(),
         };
 
+        $perPage = $request->integer('per_page', 8);
+        $paginated = $products->paginate($perPage);
+
         return response()->json([
             'message' => 'product found',
-            'products' => ProductResource::collection($products->paginate($request->integer('per_page', 12))),
+            'products' => ProductResource::collection($paginated)->response()->getData(true),
         ]);
     }
 
     public function show($id)
     {
-        $findById = ProductModel::find($id);
+        $findById = ProductModel::with(['images'])->find($id);
 
         if (!$findById) {
             return response()->json([
-                'message' => ' product not found !'
-
-            ]);
+                'success' => false,
+                'message' => 'Product not found!',
+            ], 404);
         }
 
         return response()->json([
             'success' => true,
-            'message' => 'product found',
-            'product' => new ProductResource($findById)
-
+            'message' => 'Product found',
+            'product' => new ProductResource($findById),
         ]);
     }
 
@@ -147,28 +108,20 @@ class ProductController extends Controller
         if (!$find) {
             return response()->json([
                 'success' => false,
-                'message' => 'product not found !'
+                'message' => 'Product not found!',
             ], 404);
         }
 
         $imageUrl = $find->image;
 
         if ($request->hasFile('image')) {
-            try {
-                $imageUrl = $this->uploadProductImage($request->file('image'));
-            } catch (Throwable $e) {
-                Log::error('Cloudinary product image upload failed', [
-                    'product_id' => $find->id,
-                    'error' => $e->getMessage(),
-                    'configured' => $this->cloudinaryConfigured(),
-                ]);
-
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Image upload failed. Please check your Cloudinary configuration.',
-                    'error' => config('app.debug') ? $e->getMessage() : null,
-                ], 500);
+            // Delete previous local image if being replaced
+            if ($find->image) {
+                $this->deleteImage($find->image);
             }
+            $imageUrl = $this->uploadImage($request->file('image'), 'products');
+        } elseif ($request->filled('image')) {
+            $imageUrl = $request->input('image');
         }
 
         $data = $request->validated();
@@ -182,9 +135,8 @@ class ProductController extends Controller
 
         return response()->json([
             'success' => true,
-            'message' => 'product update successfully',
+            'message' => 'Product updated successfully',
             'product' => new ProductResource($find->fresh()),
-
         ]);
     }
 
@@ -195,18 +147,30 @@ class ProductController extends Controller
         if (!$find) {
             return response()->json([
                 'success' => false,
-                'message' => 'product not found !'
+                'message' => 'Product not found!',
+            ], 404);
+        }
 
-            ]);
+        // Delete associated product main image from storage if local
+        if ($find->image) {
+            $this->deleteImage($find->image);
+        }
+
+        // Delete associated gallery images from storage if any
+        if ($find->images) {
+            foreach ($find->images as $img) {
+                if ($img->image) {
+                    $this->deleteImage($img->image);
+                }
+            }
         }
 
         $find->delete();
 
         return response()->json([
             'success' => true,
-            'message' => 'delete successfully  !',
-            "delete" => $find
-
+            'message' => 'Product deleted successfully!',
+            'delete' => $find,
         ]);
     }
 }

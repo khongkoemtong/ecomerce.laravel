@@ -14,4 +14,9 @@ class CategoryModel extends Model
         'image',
         'status',
     ];
+
+    public function products()
+    {
+        return $this->hasMany(ProductModel::class, 'category_id');
+    }
 }

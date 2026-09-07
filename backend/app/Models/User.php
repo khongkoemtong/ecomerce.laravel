@@ -43,4 +43,9 @@ class User extends Authenticatable
     {
         return $this->hasMany(CartModel::class, 'user_id');
     }
+
+    public function addresses(): HasMany
+    {
+        return $this->hasMany(AddressesModel::class, 'user_id');
+    }
 }

@@ -46,6 +46,7 @@ function WishlistPage() {
         ) : (
           <div className="grid gap-6 grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
             {wishlist.map((item) => {
+              const isOutOfStock = (item.stock ?? 0) <= 0;
               const originalVal = item.originalPrice ? parseFloat(item.originalPrice.replace('$', '')) : 0;
               const currentVal = item.price ? parseFloat(item.price.replace('$', '')) : 0;
               const discountPercent = originalVal && currentVal && originalVal > currentVal
@@ -66,6 +67,19 @@ function WishlistPage() {
                     discount={discountPercent}
                     className="absolute top-2 left-2"
                   />
+                  {discountPercent > 0 && !isOutOfStock && (
+                    <DiscountBadge
+                      discount={discountPercent}
+                      className="absolute top-2 left-2"
+                    />
+                  )}
+
+                  {/* Sold Out Badge */}
+                  {isOutOfStock && (
+                    <span className="absolute top-2.5 left-2.5 bg-stone-950/90 text-rose-400 border border-rose-500/40 text-[9px] uppercase font-bold tracking-widest px-2 py-0.5 z-10 shadow-sm backdrop-blur-xs">
+                      Sold Out
+                    </span>
+                  )}
 
                   {/* Remove from Wishlist icon */}
                   <button
@@ -84,17 +98,28 @@ function WishlistPage() {
                   {/* Bottom-Left: Quick Add to Bag Button */}
                   <button
                     type="button"
+                    disabled={isOutOfStock}
                     onClick={(e) => {
                       e.preventDefault()
                       e.stopPropagation()
                       addToCart(item, 'S', item.colors[0], 1)
+                      if (!isOutOfStock) {
+                        addToCart(item, 'S', item.colors[0], 1)
+                      }
                     }}
                     className={`absolute left-3 bottom-3 z-10 flex h-8 w-8 items-center justify-center rounded-full border transition cursor-pointer shadow-sm opacity-0 group-hover:opacity-100 transition-all duration-300 ${
                       isDark
                         ? 'border-white/10 bg-black/80 text-stone-300 hover:bg-black hover:text-white'
                         : 'border-black/10 bg-white/90 text-stone-700 hover:bg-white hover:text-black'
+                    className={`absolute left-3 bottom-3 z-10 flex h-8 w-8 items-center justify-center rounded-full border transition cursor-pointer shadow-sm ${
+                      isOutOfStock
+                        ? "border-white/5 bg-black/40 text-stone-600 cursor-not-allowed opacity-40"
+                        : isDark
+                          ? 'border-white/10 bg-black/80 text-stone-300 hover:bg-black hover:text-white opacity-0 group-hover:opacity-100 transition-all duration-300'
+                          : 'border-black/10 bg-white/90 text-stone-700 hover:bg-white hover:text-black opacity-0 group-hover:opacity-100 transition-all duration-300'
                     }`}
                     aria-label="Add to Bag"
+                    aria-label={isOutOfStock ? "Sold Out" : "Add to Bag"}
                   >
                     <IoBagHandleOutline className="h-4 w-4" />
                   </button>
@@ -106,6 +131,9 @@ function WishlistPage() {
                         src={item.image}
                         alt={item.name}
                         className="h-56 w-full object-cover transition duration-500 group-hover:scale-105 sm:h-72"
+                        className={`h-56 w-full object-cover transition duration-500 group-hover:scale-105 sm:h-72 ${
+                          isOutOfStock ? 'grayscale-[0.3] opacity-85' : ''
+                        }`}
                       />
                     </div>
                     <div className="p-4">
@@ -118,6 +146,16 @@ function WishlistPage() {
                         {item.name}
                       </h3>
                       {discountPercent > 0 ? (
+                      {isOutOfStock ? (
+                        <div className="mt-2 flex items-center gap-2">
+                          <span className="text-xs font-semibold text-rose-500">
+                            Sold Out
+                          </span>
+                          <span className={`text-[10px] opacity-50 ${isDark ? 'text-stone-400' : 'text-stone-500'}`}>
+                            {item.price}
+                          </span>
+                        </div>
+                      ) : discountPercent > 0 ? (
                         <div className="mt-2 flex items-center gap-2">
                           <span className={`text-xs font-semibold ${isDark ? 'text-rose-400' : 'text-rose-600'}`}>
                             {item.price}
@@ -128,6 +166,7 @@ function WishlistPage() {
                         </div>
                       ) : (
                         <p className={`mt-2 text-xs font-semibold ${isDark ? 'text-stone-300' : 'text-stone-705'}`}>
+                        <p className={`mt-2 text-xs font-semibold ${isDark ? 'text-stone-300' : 'text-stone-700'}`}>
                           {item.price}
                         </p>
                       )}

@@ -25,8 +25,19 @@ class ProductRequest extends FormRequest
             'price' => ['required', 'numeric', 'min:0'],
             'discount_price' => ['nullable', 'numeric', 'min:0', 'lt:price'],
             'stock_qty' => ['required', 'integer', 'min:0'],
-            'sku' => ['required', 'string', 'max:100', Rule::unique('products', 'sku')->ignore($productId)],
-            'image' => ['nullable', 'image', 'mimes:jpg,jpeg,png,webp', 'max:2048'],
+            'sku' => ['nullable', 'string', 'max:100', Rule::unique('products', 'sku')->ignore($productId)],
+            'image' => [
+                'nullable',
+                function ($attribute, $value, $fail) {
+                    if (request()->hasFile('image')) {
+                        $file = request()->file('image');
+                        $validExtensions = ['jpg', 'jpeg', 'png', 'webp', 'svg', 'gif', 'avif'];
+                        if (!in_array(strtolower($file->getClientOriginalExtension()), $validExtensions)) {
+                            $fail('The ' . $attribute . ' must be a valid image file (' . implode(', ', $validExtensions) . ').');
+                        }
+                    }
+                },
+            ],
             'status' => ['nullable', Rule::in(['active', 'inactive'])],
         ];
     }

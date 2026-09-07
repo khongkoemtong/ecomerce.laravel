@@ -9,8 +9,10 @@ class ProductResource extends JsonResource
 {
     public function toArray(Request $request): array
     {
-        $hasDiscount = $this->discount_price !== null && $this->discount_price < $this->price;
-        $finalPrice = $hasDiscount ? $this->price - $this->discount_price : $this->price;
+        $hasDiscount = $this->discount_price !== null && $this->discount_price > 0 && $this->discount_price < $this->price;
+        $finalPrice = $hasDiscount ? (float) $this->discount_price : (float) $this->price;
+        $discountAmount = $hasDiscount ? (float) round($this->price - $this->discount_price, 2) : 0.0;
+        $discountPercentage = ($hasDiscount && $this->price > 0) ? (int) round((($this->price - $this->discount_price) / $this->price) * 100) : 0;
 
         return [
             'id' => $this->id,
@@ -22,6 +24,8 @@ class ProductResource extends JsonResource
             'price' => (float) $this->price,
             'discount_price' => $this->discount_price === null ? null : (float) $this->discount_price,
             'final_price' => (float) $finalPrice,
+            'discount_amount' => $discountAmount,
+            'discount_percentage' => $discountPercentage,
             'stock_qty' => (int) $this->stock_qty,
             'sku' => $this->sku,
             'image' => $this->image,

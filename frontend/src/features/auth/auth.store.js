@@ -88,10 +88,19 @@ export const logout = createAsyncThunk(
   },
 )
 
+let savedUser = null
+const savedToken = typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null
+try {
+  const rawUser = typeof window !== 'undefined' ? localStorage.getItem('auth_user') : null
+  savedUser = rawUser ? JSON.parse(rawUser) : null
+} catch (e) {
+  savedUser = null
+}
+
 const initialState = {
-  user: null,
-  isAuthenticated: false,
-  isReady: false,
+  user: savedUser,
+  isAuthenticated: Boolean(savedUser && savedToken),
+  isReady: Boolean(savedUser && savedToken),
   status: 'idle',
   error: null,
   validationErrors: null,
@@ -109,7 +118,7 @@ const authSlice = createSlice({
   extraReducers: (builder) => {
     builder
       .addCase(fetchCurrentUser.pending, (state) => {
-        if (!state.isReady) {
+        if (!state.isReady && !state.user) {
           state.status = 'loading'
         }
       })
@@ -121,9 +130,15 @@ const authSlice = createSlice({
       })
       .addCase(fetchCurrentUser.rejected, (state, action) => {
         state.status = 'idle'
-        state.user = null
-        state.isAuthenticated = false
         state.isReady = true
+        if (action.payload?.status === 401) {
+          state.user = null
+          state.isAuthenticated = false
+          if (typeof window !== 'undefined') {
+            localStorage.removeItem('auth_token')
+            localStorage.removeItem('auth_user')
+          }
+        }
         if (action.payload?.status && action.payload.status !== 401) {
           state.error = action.payload.message
         }

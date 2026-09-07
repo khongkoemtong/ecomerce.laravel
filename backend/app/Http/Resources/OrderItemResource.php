@@ -17,6 +17,16 @@ class OrderItemResource extends JsonResource
             'price' => (float) $this->price,
             'quantity' => (int) $this->quantity,
             'total' => (float) $this->total,
+            'product' => $this->product ? [
+                'id' => $this->product->id,
+                'name' => $this->product->name,
+                'slug' => $this->product->slug,
+                'image' => $this->product->image,
+                'sku' => $this->product->sku,
+                'price' => (float) $this->product->price,
+                'discount_price' => $this->product->discount_price ? (float) $this->product->discount_price : null,
+            ] : null,
+            'image' => $this->product?->image ?? null,
         ];
     }
 }

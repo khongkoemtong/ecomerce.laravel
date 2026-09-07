@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { 
   ShoppingBag, 
@@ -12,30 +12,41 @@ import {
   Plus, 
   Edit2, 
   Trash2, 
-  Sparkles,
-  Check
+  Sparkles, 
+  Check,
+  RefreshCw,
+  AlertCircle
 } from 'lucide-react';
-import { 
-  dashboardMetrics, 
-  timeRangeOptions,
-  stockChartDataByPeriod,
-  customTagProducts, 
-  salesOrders, 
-  delayedProducts 
-} from '../data/dashboardData';
 
-export default function DashboardPage() {
-  const navigate = useNavigate();
-  const [activeIndex, setActiveIndex] = useState(3); // Default to Fashion ($31,000)
-  const [activeTag, setActiveTag] = useState('Fast Moving');
-  
-  // Section-by-Section API States & Fallbacks
-  const [metrics, setMetrics] = useState(dashboardMetrics);
-  const [tagProductsList, setTagProductsList] = useState(customTagProducts);
-  const [salesOrdersList, setSalesOrdersList] = useState(salesOrders);
-  const [delayedProductsList, setDelayedProductsList] = useState(delayedProducts);
-  const [restockItemsCount, setRestockItemsCount] = useState(120);
-  const [apiStockChartData, setApiStockChartData] = useState(null);
+const API_BASE_URL =
+  (import.meta.env.VITE_API_URL?.replace(/\/$/, '')) || 'http://127.0.0.1:8000/api';
+
+  const TIME_RANGE_OPTIONS = ['Daily', 'Weekly', 'Monthly', 'Yearly'];
+  const TAG_OPTIONS = ['All', 'Fast Moving', 'Discounted', 'Low Demand', 'New Arrival'];
+
+  const INITIAL_METRICS = {
+    totalOrders: { value: '0', change: '+ 0%', isPositive: true, period: 'Since Last Month' },
+    alreadyDelivered: { value: '0', change: '+ 0%', isPositive: true, period: 'Since Last Month' },
+    productReturn: { value: '0%', countText: '0', subText: 'Products Return', change: '0%', isPositive: false, period: 'Since last month', percentage: 0 },
+    turnoverRate: { value: 'N/A', subText: 'Catalog Turnover', change: '0%', isPositive: true, period: 'Since last month', percentage: 0 }
+  };
+
+  export default function DashboardPage() {
+    const navigate = useNavigate();
+    const [activeIndex, setActiveIndex] = useState(0);
+    const [activeTag, setActiveTag] = useState('All');
+    
+    // Real API States
+    const [metrics, setMetrics] = useState(INITIAL_METRICS);
+    const [tagProductsList, setTagProductsList] = useState([]);
+  const [salesOrdersList, setSalesOrdersList] = useState([]);
+  const [delayedProductsList, setDelayedProductsList] = useState([]);
+  const [restockItemsCount, setRestockItemsCount] = useState(0);
+  const [apiStockChartData, setApiStockChartData] = useState([]);
+
+  // Loading & Error States
+  const [isLoading, setIsLoading] = useState(true);
+  const [apiError, setApiError] = useState(null);
 
   // Time Range Dropdown States
   const [timeRange, setTimeRange] = useState('Monthly');
@@ -46,66 +57,69 @@ export default function DashboardPage() {
   const chartDropdownRef = useRef(null);
   const salesDropdownRef = useRef(null);
 
-  // 1. Fetch Top KPI Metrics Section
-  useEffect(() => {
-    fetch('http://127.0.0.1:8000/api/dashboard/metrics')
-      .then((res) => (res.ok ? res.json() : null))
-      .then((data) => {
-        if (data?.metrics) setMetrics(data.metrics);
-      })
-      .catch((err) => console.warn('Metrics Section API fallback:', err));
-  }, []);
+  // Fetch all dashboard data from real backend APIs
+  const fetchDashboardData = useCallback(async () => {
+    setIsLoading(true);
+    setApiError(null);
 
-  // 2. Fetch Stock Chart Analytics Section (by timeRange)
-  useEffect(() => {
-    fetch(`http://127.0.0.1:8000/api/dashboard/stock-chart?period=${timeRange}`)
-      .then((res) => (res.ok ? res.json() : null))
-      .then((data) => {
-        if (data?.stockChartData && data.stockChartData.length > 0) {
-          setApiStockChartData(data.stockChartData);
-        }
-      })
-      .catch((err) => console.warn('Stock Chart Section API fallback:', err));
-  }, [timeRange]);
+    try {
+      // 1. Fetch Metrics
+      const metricsRes = await fetch(`${API_BASE_URL}/dashboard/metrics`);
+      if (metricsRes.ok) {
+        const metricsData = await metricsRes.json();
+        if (metricsData?.metrics) setMetrics(metricsData.metrics);
+      }
 
-  // 3. Fetch Custom Tag Products Section (by activeTag)
-  useEffect(() => {
-    fetch(`http://127.0.0.1:8000/api/dashboard/tag-products?tag=${activeTag}`)
-      .then((res) => (res.ok ? res.json() : null))
-      .then((data) => {
-        if (data?.products && data.products.length > 0) {
-          setTagProductsList(data.products);
+      // 2. Fetch Stock Chart
+      const chartRes = await fetch(`${API_BASE_URL}/dashboard/stock-chart?period=${encodeURIComponent(timeRange)}`);
+      if (chartRes.ok) {
+        const chartData = await chartRes.json();
+        if (Array.isArray(chartData?.stockChartData)) {
+          setApiStockChartData(chartData.stockChartData);
         }
-      })
-      .catch((err) => console.warn('Tag Products Section API fallback:', err));
-  }, [activeTag]);
+      }
 
-  // 4. Fetch Sales Orders Widget Section (by salesTimeRange)
-  useEffect(() => {
-    fetch(`http://127.0.0.1:8000/api/dashboard/sales-orders?period=${salesTimeRange}`)
-      .then((res) => (res.ok ? res.json() : null))
-      .then((data) => {
-        if (data?.salesOrders && data.salesOrders.length > 0) {
-          setSalesOrdersList(data.salesOrders);
+      // 3. Fetch Tagged Products
+      const tagQuery = activeTag === 'All' ? '' : `?tag=${encodeURIComponent(activeTag)}`;
+      const tagRes = await fetch(`${API_BASE_URL}/dashboard/tag-products${tagQuery}`);
+      if (tagRes.ok) {
+        const tagData = await tagRes.json();
+        if (Array.isArray(tagData?.products)) {
+          setTagProductsList(tagData.products);
         }
-      })
-      .catch((err) => console.warn('Sales Orders Section API fallback:', err));
-  }, [salesTimeRange]);
+      }
 
-  // 5. Fetch Restock Recommendations & Delayed Shipments Section
+      // 4. Fetch Sales Orders
+      const salesRes = await fetch(`${API_BASE_URL}/dashboard/sales-orders?period=${encodeURIComponent(salesTimeRange)}`);
+      if (salesRes.ok) {
+        const salesData = await salesRes.json();
+        if (Array.isArray(salesData?.salesOrders)) {
+          setSalesOrdersList(salesData.salesOrders);
+        }
+      }
+
+      // 5. Fetch Restock & Delays
+      const restockRes = await fetch(`${API_BASE_URL}/dashboard/restock-recommendations`);
+      if (restockRes.ok) {
+        const restockData = await restockRes.json();
+        if (restockData?.itemsCount !== undefined) {
+          setRestockItemsCount(restockData.itemsCount);
+        }
+        if (Array.isArray(restockData?.delayedProducts)) {
+          setDelayedProductsList(restockData.delayedProducts);
+        }
+      }
+    } catch (err) {
+      console.error('Failed to fetch real dashboard data from backend:', err);
+      setApiError(err.message || 'Cannot connect to backend API server.');
+    } finally {
+      setIsLoading(false);
+    }
+  }, [timeRange, activeTag, salesTimeRange]);
+
   useEffect(() => {
-    fetch('http://127.0.0.1:8000/api/dashboard/restock-recommendations')
-      .then((res) => (res.ok ? res.json() : null))
-      .then((data) => {
-        if (data?.delayedProducts && data.delayedProducts.length > 0) {
-          setDelayedProductsList(data.delayedProducts);
-        }
-        if (data?.itemsCount) {
-          setRestockItemsCount(data.itemsCount);
-        }
-      })
-      .catch((err) => console.warn('Restock Recommendations Section API fallback:', err));
-  }, []);
+    fetchDashboardData();
+  }, [fetchDashboardData]);
 
   // Close dropdowns when clicking outside
   useEffect(() => {
@@ -121,11 +135,7 @@ export default function DashboardPage() {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  const rawChartData = (apiStockChartData && apiStockChartData.length > 0) 
-    ? apiStockChartData 
-    : (stockChartDataByPeriod[timeRange] || stockChartDataByPeriod.Monthly);
-
-  // Helper functions to get accurate Y coordinates on the SVG lines for any X (cx) position
+  // Helper functions for SVG curve calculation
   const getStockY = (cx) => {
     if (cx <= 160) {
       const t = cx / 160;
@@ -152,7 +162,7 @@ export default function DashboardPage() {
     }
   };
 
-  const activeChartData = rawChartData.map((pt, index, arr) => {
+  const activeChartData = apiStockChartData.map((pt, index, arr) => {
     const total = arr.length;
     const cx = total > 1 ? Math.round(50 + index * (400 / (total - 1))) : 250;
     return {
@@ -163,9 +173,10 @@ export default function DashboardPage() {
     };
   });
 
-  const currentChartPoint = activeChartData[activeIndex] || activeChartData[0] || { cx: 285, stockY: 75, consumeY: 110, category: 'Fashion', price: '$ 31,000' };
-  const filteredTagProducts = tagProductsList.filter((prod) => prod.tag === activeTag);
-  const displayedTagProducts = filteredTagProducts.length > 0 ? filteredTagProducts : tagProductsList;
+  const currentChartPoint = activeChartData[activeIndex] || activeChartData[0] || null;
+  const displayedTagProducts = activeTag === 'All' 
+    ? tagProductsList 
+    : tagProductsList.filter((prod) => prod.tag === activeTag);
 
 
 
@@ -173,6 +184,42 @@ export default function DashboardPage() {
   return (
     <div className="p-6 md:p-8 space-y-6 bg-[#f8f9fc] dark:bg-gray-950 min-h-screen text-gray-800 dark:text-gray-100 transition-colors duration-200">
       
+      {/* ==================== 0. DASHBOARD TOP TITLE & LIVE STATUS BAR ==================== */}
+      <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-4 pb-2 border-b border-gray-200 dark:border-gray-800">
+        <div>
+          <h1 className="text-2xl font-extrabold text-gray-900 dark:text-white tracking-tight">
+            Admin Overview & Analytics
+          </h1>
+          <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+            Real-time store metrics, inventory levels, and live order tracking.
+          </p>
+        </div>
+
+        <div className="flex items-center gap-3 self-start sm:self-auto">
+          {apiError ? (
+            <div className="flex items-center gap-1.5 px-3 py-1.5 bg-red-50 dark:bg-red-950/50 border border-red-200 dark:border-red-800/60 text-red-600 dark:text-red-400 text-xs font-medium">
+              <AlertCircle className="w-3.5 h-3.5" />
+              <span>Backend Offline</span>
+            </div>
+          ) : (
+            <div className="flex items-center gap-2 px-3 py-1.5 bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-200 dark:border-emerald-800/60 text-emerald-700 dark:text-emerald-400 text-xs font-medium">
+              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+              <span>Live API Connected</span>
+            </div>
+          )}
+
+          <button
+            onClick={fetchDashboardData}
+            disabled={isLoading}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-white dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-200 border border-gray-200 dark:border-gray-700 text-xs font-semibold transition-all shadow-xs disabled:opacity-50 cursor-pointer"
+            title="Refresh Real API Data"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin text-amber-500' : ''}`} />
+            <span>{isLoading ? 'Syncing...' : 'Sync'}</span>
+          </button>
+        </div>
+      </div>
+
       {/* ==================== 1. TOP METRIC CARDS ROW ==================== */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
         
@@ -393,7 +440,7 @@ export default function DashboardPage() {
                   {/* Dropdown Popup */}
                   {isChartTimeOpen && (
                     <div className="absolute right-0 mt-1 w-36 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 shadow-xl z-30 py-1 text-xs">
-                      {timeRangeOptions.map((opt) => (
+                      {TIME_RANGE_OPTIONS.map((opt) => (
                         <button
                           key={opt}
                           onClick={() => {
@@ -427,126 +474,138 @@ export default function DashboardPage() {
                 <div className="border-b border-dashed border-gray-100 dark:border-gray-800/80 pb-1">$10K</div>
               </div>
 
-              {/* Chart Curved Paths */}
-              <svg className="w-full h-full overflow-visible" viewBox="0 0 500 200" preserveAspectRatio="none">
-                <defs>
-                  <linearGradient id="stockGrad" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="#10b981" stopOpacity="0.25" />
-                    <stop offset="100%" stopColor="#10b981" stopOpacity="0.0" />
-                  </linearGradient>
-                  <linearGradient id="consumeGrad" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="#ccff00" stopOpacity="0.3" />
-                    <stop offset="100%" stopColor="#ccff00" stopOpacity="0.0" />
-                  </linearGradient>
-                </defs>
+              {activeChartData.length > 0 && currentChartPoint ? (
+                <>
+                  {/* Chart Curved Paths */}
+                  <svg className="w-full h-full overflow-visible" viewBox="0 0 500 200" preserveAspectRatio="none">
+                    <defs>
+                      <linearGradient id="stockGrad" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stopColor="#10b981" stopOpacity="0.25" />
+                        <stop offset="100%" stopColor="#10b981" stopOpacity="0.0" />
+                      </linearGradient>
+                      <linearGradient id="consumeGrad" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stopColor="#ccff00" stopOpacity="0.3" />
+                        <stop offset="100%" stopColor="#ccff00" stopOpacity="0.0" />
+                      </linearGradient>
+                    </defs>
 
-                {/* Stock Fill & Line */}
-                <path
-                  d="M 0,140 Q 80,40 160,110 T 320,70 T 500,20 L 500,200 L 0,200 Z"
-                  fill="url(#stockGrad)"
-                />
-                <path
-                  d="M 0,140 Q 80,40 160,110 T 320,70 T 500,20"
-                  fill="none"
-                  stroke="#10b981"
-                  strokeWidth="3"
-                />
+                    {/* Stock Fill & Line */}
+                    <path
+                      d="M 0,140 Q 80,40 160,110 T 320,70 T 500,20 L 500,200 L 0,200 Z"
+                      fill="url(#stockGrad)"
+                    />
+                    <path
+                      d="M 0,140 Q 80,40 160,110 T 320,70 T 500,20"
+                      fill="none"
+                      stroke="#10b981"
+                      strokeWidth="3"
+                    />
 
-                {/* Consume Fill & Line */}
-                <path
-                  d="M 0,170 Q 90,80 170,140 T 330,100 T 500,50 L 500,200 L 0,200 Z"
-                  fill="url(#consumeGrad)"
-                />
-                <path
-                  d="M 0,170 Q 90,80 170,140 T 330,100 T 500,50"
-                  fill="none"
-                  stroke="#ccff00"
-                  strokeWidth="3"
-                />
+                    {/* Consume Fill & Line */}
+                    <path
+                      d="M 0,170 Q 90,80 170,140 T 330,100 T 500,50 L 500,200 L 0,200 Z"
+                      fill="url(#consumeGrad)"
+                    />
+                    <path
+                      d="M 0,170 Q 90,80 170,140 T 330,100 T 500,50"
+                      fill="none"
+                      stroke="#ccff00"
+                      strokeWidth="3"
+                    />
 
-                {/* Vertical Guideline for Hovered Node */}
-                <line
-                  x1={currentChartPoint.cx}
-                  y1="0"
-                  x2={currentChartPoint.cx}
-                  y2="200"
-                  stroke="#10b981"
-                  strokeWidth="1.5"
-                  strokeDasharray="4 4"
-                  className="transition-all duration-300 opacity-60"
-                />
+                    {/* Vertical Guideline for Hovered Node */}
+                    <line
+                      x1={currentChartPoint.cx}
+                      y1="0"
+                      x2={currentChartPoint.cx}
+                      y2="200"
+                      stroke="#10b981"
+                      strokeWidth="1.5"
+                      strokeDasharray="4 4"
+                      className="transition-all duration-300 opacity-60"
+                    />
 
-                {/* Active Highlight Node Circles */}
-                <circle 
-                  cx={currentChartPoint.cx} 
-                  cy={currentChartPoint.stockY} 
-                  r="7" 
-                  fill="#10b981" 
-                  stroke="#ffffff" 
-                  strokeWidth="2"
-                  className="transition-all duration-300 shadow-md"
-                />
-                <circle 
-                  cx={currentChartPoint.cx} 
-                  cy={currentChartPoint.consumeY} 
-                  r="6" 
-                  fill="#ccff00" 
-                  stroke="#18181b" 
-                  strokeWidth="2"
-                  className="transition-all duration-300 shadow-md"
-                />
+                    {/* Active Highlight Node Circles */}
+                    <circle 
+                      cx={currentChartPoint.cx} 
+                      cy={currentChartPoint.stockY} 
+                      r="7" 
+                      fill="#10b981" 
+                      stroke="#ffffff" 
+                      strokeWidth="2"
+                      className="transition-all duration-300 shadow-md"
+                    />
+                    <circle 
+                      cx={currentChartPoint.cx} 
+                      cy={currentChartPoint.consumeY} 
+                      r="6" 
+                      fill="#ccff00" 
+                      stroke="#18181b" 
+                      strokeWidth="2"
+                      className="transition-all duration-300 shadow-md"
+                    />
 
-                {/* Interactive Hit Areas for Hovering Nodes */}
-                {activeChartData.map((pt, index) => (
-                  <rect
-                    key={pt.id}
-                    x={pt.cx - 35}
-                    y="0"
-                    width="70"
-                    height="200"
-                    fill="transparent"
-                    className="cursor-pointer"
-                    onMouseEnter={() => setActiveIndex(index)}
-                  />
-                ))}
-              </svg>
+                    {/* Interactive Hit Areas for Hovering Nodes */}
+                    {activeChartData.map((pt, index) => (
+                      <rect
+                        key={pt.id ?? index}
+                        x={pt.cx - 35}
+                        y="0"
+                        width="70"
+                        height="200"
+                        fill="transparent"
+                        className="cursor-pointer"
+                        onMouseEnter={() => setActiveIndex(index)}
+                      />
+                    ))}
+                  </svg>
 
-              {/* Dynamic Hover Tooltip Box */}
-              <div 
-                className="absolute bg-[#18181b] text-white px-3.5 py-2 rounded-none shadow-xl border border-zinc-700 flex flex-col items-center z-20 pointer-events-none transition-all duration-300 ease-out -translate-x-1/2 -translate-y-full mb-3"
-                style={{ 
-                  left: `${(currentChartPoint.cx / 500) * 100}%`, 
-                  top: `${(currentChartPoint.stockY / 200) * 100}%` 
-                }}
-              >
-                <span className="text-[10px] text-zinc-400 font-medium uppercase tracking-wider">
-                  {currentChartPoint.category} ({timeRange})
-                </span>
-                <span className="text-[#ccff00] text-sm font-bold">
-                  {currentChartPoint.price}
-                </span>
-                {/* Pointer triangle */}
-                <div className="w-2.5 h-2.5 bg-[#18181b] rotate-45 absolute -bottom-1 border-r border-b border-zinc-700"></div>
-              </div>
+                  {/* Dynamic Hover Tooltip Box */}
+                  <div 
+                    className="absolute bg-[#18181b] text-white px-3.5 py-2 rounded-none shadow-xl border border-zinc-700 flex flex-col items-center z-20 pointer-events-none transition-all duration-300 ease-out -translate-x-1/2 -translate-y-full mb-3"
+                    style={{ 
+                      left: `${(currentChartPoint.cx / 500) * 100}%`, 
+                      top: `${(currentChartPoint.stockY / 200) * 100}%` 
+                    }}
+                  >
+                    <span className="text-[10px] text-zinc-400 font-medium uppercase tracking-wider">
+                      {currentChartPoint.category} ({timeRange})
+                    </span>
+                    <span className="text-[#ccff00] text-sm font-bold">
+                      {currentChartPoint.price}
+                    </span>
+                    {/* Pointer triangle */}
+                    <div className="w-2.5 h-2.5 bg-[#18181b] rotate-45 absolute -bottom-1 border-r border-b border-zinc-700"></div>
+                  </div>
+                </>
+              ) : (
+                <div className="h-full flex items-center justify-center text-xs text-gray-400">
+                  No stock chart metrics recorded for {timeRange}.
+                </div>
+              )}
             </div>
           </div>
 
           {/* Category Tabs at bottom */}
           <div className="flex items-center justify-between gap-2 pt-4 border-t border-gray-100 dark:border-gray-800 overflow-x-auto custom-scrollbar">
-            {activeChartData.map((pt, index) => (
-              <button
-                key={pt.id}
-                onMouseEnter={() => setActiveIndex(index)}
-                onClick={() => setActiveIndex(index)}
-                className={`px-4 py-1.5 rounded-none text-xs font-semibold transition-all shrink-0 cursor-pointer ${
-                  activeIndex === index
-                    ? 'bg-[#18181b] dark:bg-white text-white dark:text-zinc-900 shadow-sm'
-                    : 'text-gray-500 hover:text-gray-800 dark:hover:text-gray-200'
-                }`}
-              >
-                {pt.category}
-              </button>
-            ))}
+            {activeChartData.length > 0 ? (
+              activeChartData.map((pt, index) => (
+                <button
+                  key={pt.id ?? index}
+                  onMouseEnter={() => setActiveIndex(index)}
+                  onClick={() => setActiveIndex(index)}
+                  className={`px-4 py-1.5 rounded-none text-xs font-semibold transition-all shrink-0 cursor-pointer ${
+                    activeIndex === index
+                      ? 'bg-[#18181b] dark:bg-white text-white dark:text-zinc-900 shadow-sm'
+                      : 'text-gray-500 hover:text-gray-800 dark:hover:text-gray-200'
+                  }`}
+                >
+                  {pt.category}
+                </button>
+              ))
+            ) : (
+              <span className="text-xs text-gray-400 py-1">No category tags available</span>
+            )}
           </div>
         </div>
 
@@ -557,12 +616,12 @@ export default function DashboardPage() {
               <h2 className="text-base font-bold text-gray-900 dark:text-white">
                 Custom Tags & Labels
               </h2>
-              <p className="text-xs text-gray-400">Categories By AI Assistant</p>
+              <p className="text-xs text-gray-400">Categories from Database & AI</p>
             </div>
 
             {/* Tag Pills */}
             <div className="flex items-center gap-2 overflow-x-auto custom-scrollbar pb-3 mb-4">
-              {['Fast Moving', 'Discounted', 'Low Demand', 'Dead Items', 'New Arrival'].map((tag) => (
+              {TAG_OPTIONS.map((tag) => (
                 <button
                   key={tag}
                   onClick={() => setActiveTag(tag)}
@@ -688,7 +747,7 @@ export default function DashboardPage() {
                   {/* Dropdown Popup */}
                   {isSalesTimeOpen && (
                     <div className="absolute right-0 mt-1 w-32 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 shadow-xl z-30 py-1 text-xs">
-                      {timeRangeOptions.map((opt) => (
+                      {TIME_RANGE_OPTIONS.map((opt) => (
                         <button
                           key={opt}
                           onClick={() => {
@@ -722,43 +781,51 @@ export default function DashboardPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50 dark:divide-gray-800/60">
-                {salesOrdersList.map((item) => (
-                  <tr key={item.id} className="hover:bg-gray-50/50 dark:hover:bg-gray-800/30 transition-colors">
-                    <td className="py-2.5 flex items-center gap-2.5">
-                      <img
-                        src={item.image}
-                        alt={item.name}
-                        className="w-8 h-8 rounded-none object-cover border border-gray-100 dark:border-gray-700 shrink-0"
-                      />
-                      <div>
-                        <div className="font-bold text-gray-900 dark:text-white">{item.name}</div>
-                        <div className="text-[10px] text-gray-400">{item.stockText}</div>
-                      </div>
-                    </td>
-                    <td className="py-2.5 font-semibold text-gray-900 dark:text-white">{item.price}</td>
-                    <td className="py-2.5 text-center">
-                      <span className={`px-2.5 py-0.5 rounded-none text-[10px] font-bold ${item.priorityColor}`}>
-                        {item.priority}
-                      </span>
-                    </td>
-                    <td className="py-2.5 text-right">
-                      <div className="flex items-center justify-end gap-1 text-gray-400">
-                        <button 
-                          onClick={() => navigate('/manage-products')}
-                          className="p-1 hover:text-gray-700 dark:hover:text-gray-200 transition-colors cursor-pointer"
-                        >
-                          <Edit2 className="w-3.5 h-3.5" />
-                        </button>
-                        <button 
-                          onClick={() => navigate('/manage-products')}
-                          className="p-1 hover:text-gray-700 dark:hover:text-gray-200 transition-colors cursor-pointer"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
+                {salesOrdersList.length > 0 ? (
+                  salesOrdersList.map((item) => (
+                    <tr key={item.id} className="hover:bg-gray-50/50 dark:hover:bg-gray-800/30 transition-colors">
+                      <td className="py-2.5 flex items-center gap-2.5">
+                        <img
+                          src={item.image}
+                          alt={item.name}
+                          className="w-8 h-8 rounded-none object-cover border border-gray-100 dark:border-gray-700 shrink-0"
+                        />
+                        <div>
+                          <div className="font-bold text-gray-900 dark:text-white">{item.name}</div>
+                          <div className="text-[10px] text-gray-400">{item.stockText}</div>
+                        </div>
+                      </td>
+                      <td className="py-2.5 font-semibold text-gray-900 dark:text-white">{item.price}</td>
+                      <td className="py-2.5 text-center">
+                        <span className={`px-2.5 py-0.5 rounded-none text-[10px] font-bold ${item.priorityColor}`}>
+                          {item.priority}
+                        </span>
+                      </td>
+                      <td className="py-2.5 text-right">
+                        <div className="flex items-center justify-end gap-1 text-gray-400">
+                          <button 
+                            onClick={() => navigate('/manage-products')}
+                            className="p-1 hover:text-gray-700 dark:hover:text-gray-200 transition-colors cursor-pointer"
+                          >
+                            <Edit2 className="w-3.5 h-3.5" />
+                          </button>
+                          <button 
+                            onClick={() => navigate('/manage-products')}
+                            className="p-1 hover:text-gray-700 dark:hover:text-gray-200 transition-colors cursor-pointer"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))
+                ) : (
+                  <tr>
+                    <td colSpan="4" className="py-6 text-center text-gray-400 text-xs font-medium">
+                      No sales orders found for this period
                     </td>
                   </tr>
-                ))}
+                )}
               </tbody>
             </table>
           </div>
@@ -878,32 +945,40 @@ export default function DashboardPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50 dark:divide-gray-800/60">
-                {delayedProductsList.map((prod) => (
-                  <tr key={prod.id} className="hover:bg-gray-50/50 dark:hover:bg-gray-800/30 transition-colors">
-                    <td className="py-2.5 flex items-center gap-2.5">
-                      <img
-                        src={prod.image}
-                        alt={prod.name}
-                        className="w-8 h-8 rounded-none object-cover border border-gray-100 dark:border-gray-700 shrink-0"
-                      />
-                      <div>
-                        <div className="font-bold text-gray-900 dark:text-white">{prod.name}</div>
-                        <div className="text-[10px] text-gray-400">{prod.id}</div>
-                      </div>
-                    </td>
-                    <td className="py-2.5 text-center text-gray-500 dark:text-gray-400 font-medium">
-                      {prod.delay}
-                    </td>
-                    <td className="py-2.5 text-right pr-1">
-                      <button 
-                        onClick={() => navigate('/customers')}
-                        className="px-3 py-1 bg-gray-100 hover:bg-gray-200 dark:bg-gray-800 dark:hover:bg-gray-700 text-gray-800 dark:text-gray-200 rounded-none text-xs font-semibold transition-colors cursor-pointer"
-                      >
-                        Contact
-                      </button>
+                {delayedProductsList.length > 0 ? (
+                  delayedProductsList.map((prod) => (
+                    <tr key={prod.id} className="hover:bg-gray-50/50 dark:hover:bg-gray-800/30 transition-colors">
+                      <td className="py-2.5 flex items-center gap-2.5">
+                        <img
+                          src={prod.image}
+                          alt={prod.name}
+                          className="w-8 h-8 rounded-none object-cover border border-gray-100 dark:border-gray-700 shrink-0"
+                        />
+                        <div>
+                          <div className="font-bold text-gray-900 dark:text-white">{prod.name}</div>
+                          <div className="text-[10px] text-gray-400">{prod.id}</div>
+                        </div>
+                      </td>
+                      <td className="py-2.5 text-center text-gray-500 dark:text-gray-400 font-medium">
+                        {prod.delay}
+                      </td>
+                      <td className="py-2.5 text-right pr-1">
+                        <button 
+                          onClick={() => navigate('/customers')}
+                          className="px-3 py-1 bg-gray-100 hover:bg-gray-200 dark:bg-gray-800 dark:hover:bg-gray-700 text-gray-800 dark:text-gray-200 rounded-none text-xs font-semibold transition-colors cursor-pointer"
+                        >
+                          Contact
+                        </button>
+                      </td>
+                    </tr>
+                  ))
+                ) : (
+                  <tr>
+                    <td colSpan="3" className="py-6 text-center text-gray-400 text-xs font-medium">
+                      No pending or delayed shipments
                     </td>
                   </tr>
-                ))}
+                )}
               </tbody>
             </table>
           </div>

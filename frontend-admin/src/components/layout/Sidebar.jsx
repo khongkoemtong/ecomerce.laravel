@@ -18,20 +18,23 @@ import {
   Grid
 } from 'lucide-react';
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
-import { initialOrdersData } from '../../data/ordersData';
+const API_BASE_URL =
+  import.meta.env.VITE_API_URL?.replace(/\/$/, '') || 'http://127.0.0.1:8000/api';
 
 export default function Sidebar({ isOpen }) {
   const location = useLocation();
   const navigate = useNavigate();
   const currentPath = location.pathname;
-  const [orderCount, setOrderCount] = useState(initialOrdersData.length);
+  const [orderCount, setOrderCount] = useState(0);
 
   // Fetch Order Count dynamically from API
   useEffect(() => {
-    fetch('http://127.0.0.1:8000/api/orders-list')
+    fetch(`${API_BASE_URL}/orders-list`)
       .then((res) => (res.ok ? res.json() : null))
       .then((data) => {
-        if (data?.orders) {
+        if (data?.total !== undefined) {
+          setOrderCount(data.total);
+        } else if (data?.orders) {
           setOrderCount(data.orders.length);
         }
       })

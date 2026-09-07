@@ -92,7 +92,7 @@ class DashboardController extends Controller
         }
 
         return response()->json([
-            'itemsCount' => $lowStockProducts->count() > 0 ? $lowStockProducts->count() : 120,
+            'itemsCount' => $lowStockProducts->count(),
             'lowStockProducts' => $lowStockProducts,
             'delayedProducts' => $delayedProducts,
         ]);
@@ -105,35 +105,39 @@ class DashboardController extends Controller
         $deliveredOrdersCount = OrderModel::where('order_status', OrderModel::ORDER_STATUS_DELIVERED)->count();
         $cancelledOrReturnedCount = OrderModel::where('order_status', OrderModel::ORDER_STATUS_CANCELLED)->count();
 
+        $returnPercentage = $totalOrdersCount > 0
+            ? (int)round(($cancelledOrReturnedCount / $totalOrdersCount) * 100)
+            : 0;
+
         return [
             'totalOrders' => [
-                'value' => $totalOrdersCount > 0 ? number_format($totalOrdersCount) : '2,580',
-                'change' => '+ 12%',
+                'value' => number_format($totalOrdersCount),
+                'change' => '+ 0%',
                 'isPositive' => true,
                 'period' => 'Since Last Month',
             ],
             'alreadyDelivered' => [
-                'value' => $deliveredOrdersCount > 0 ? number_format($deliveredOrdersCount) : '2,380',
-                'change' => '+ 7%',
+                'value' => number_format($deliveredOrdersCount),
+                'change' => '+ 0%',
                 'isPositive' => true,
                 'period' => 'Since Last Month',
             ],
             'productReturn' => [
-                'value' => '10%',
-                'countText' => $cancelledOrReturnedCount > 0 ? (string)$cancelledOrReturnedCount : '120',
+                'value' => $returnPercentage . '%',
+                'countText' => (string)$cancelledOrReturnedCount,
                 'subText' => 'Products Return',
-                'change' => '- 1.5%',
+                'change' => '0%',
                 'isPositive' => false,
                 'period' => 'Since last month',
-                'percentage' => 35,
+                'percentage' => $returnPercentage,
             ],
             'turnoverRate' => [
-                'value' => '2.5 Days',
-                'subText' => '20% Decrease',
-                'change' => '- 20%',
-                'isPositive' => false,
+                'value' => 'N/A',
+                'subText' => 'Catalog Turnover',
+                'change' => '0%',
+                'isPositive' => true,
                 'period' => 'Since last month',
-                'percentage' => 65,
+                'percentage' => 50,
             ],
         ];
     }

@@ -143,42 +143,93 @@ class ProductSeeder extends Seeder
                 'brand' => 'Celine',
                 'category' => 'Accessories',
                 'price' => 95.00,
-                'discount_price' => null,
+                'discount_price' => 75.00,
                 'slug' => 'gold-hoop-earrings',
-                'image' => '/images/testing/logo.jpg',
+                'image' => 'https://images.unsplash.com/photo-1535632066927-ab7c9ab60908?w=600&auto=format&fit=crop&q=80',
                 'description' => 'Thick, structural hoop earrings cast in recycled sterling silver and plated in 18-karat gold with a polished mirror finish.',
                 'sku' => 'CE-GHE-11',
-                'stock_qty' => 25,
+                'stock_qty' => 4, // Low stock for AI Restock
             ],
             [
                 'name' => 'Knit Polo Shirt',
                 'brand' => 'Jil Sander',
                 'category' => 'New Season',
                 'price' => 130.00,
-                'discount_price' => null,
+                'discount_price' => 110.00,
                 'slug' => 'knit-polo-shirt',
-                'image' => '/images/testing/f8109b0ba53596059df9dfba8c5063f7.jpg',
+                'image' => 'https://images.unsplash.com/photo-1521572163474-6864f9cf17ab?w=600&auto=format&fit=crop&q=80',
                 'description' => 'Finely knit polo shirt in organic cotton-silk blend yarn, featuring an open camp collar and ribbed hems.',
                 'sku' => 'JS-KPS-12',
                 'stock_qty' => 18,
-            ]
+            ],
+            [
+                'name' => 'Pleated Midi Skirt',
+                'brand' => 'Toteme',
+                'category' => 'New Season',
+                'price' => 175.00,
+                'discount_price' => 145.00,
+                'slug' => 'pleated-midi-skirt',
+                'image' => 'https://images.unsplash.com/photo-1583496661160-fb5886a0aaaa?w=600&auto=format&fit=crop&q=80',
+                'description' => 'Fluid sunray pleated midi skirt featuring a concealed zip fastening and an elasticated grosgrain waistband.',
+                'sku' => 'TO-PMS-13',
+                'stock_qty' => 3, // Low stock for AI Restock
+            ],
+            [
+                'name' => 'Leather Cardholder Wallet',
+                'brand' => 'Bottega',
+                'category' => 'Accessories',
+                'price' => 85.00,
+                'discount_price' => null,
+                'slug' => 'leather-cardholder-wallet',
+                'image' => 'https://images.unsplash.com/photo-1627123424574-724758594e93?w=600&auto=format&fit=crop&q=80',
+                'description' => 'Intrecciato woven calfskin cardholder with four exterior card slots and a central receipt pocket.',
+                'sku' => 'BO-LCW-14',
+                'stock_qty' => 5, // Low stock for AI Restock
+            ],
+            [
+                'name' => 'Chunky Knit Cardigan',
+                'brand' => 'Atelier',
+                'category' => 'Outerwear',
+                'price' => 195.00,
+                'discount_price' => 165.00,
+                'slug' => 'chunky-knit-cardigan',
+                'image' => 'https://images.unsplash.com/photo-1434389677669-e08b4cac3105?w=600&auto=format&fit=crop&q=80',
+                'description' => 'Heavy-gauge ribbed cardigan knit in pure alpaca-wool blend with oversized tortoiseshell buttons.',
+                'sku' => 'AT-CKC-15',
+                'stock_qty' => 8, // Low stock for AI Restock
+            ],
+            [
+                'name' => 'Minimalist Leather Slides',
+                'brand' => 'Prada',
+                'category' => 'Footwear',
+                'price' => 150.00,
+                'discount_price' => null,
+                'slug' => 'minimalist-leather-slides',
+                'image' => 'https://images.unsplash.com/photo-1543163521-1bf539c55dd2?w=600&auto=format&fit=crop&q=80',
+                'description' => 'Supple nappa leather flat slides with an understated crossover band and padded footbed.',
+                'sku' => 'PR-MLS-16',
+                'stock_qty' => 22,
+            ],
         ];
 
         foreach ($products as $p) {
-            ProductModel::create([
-                'category_id' => $categories[$p['category']] ?? 1,
-                'brand_id' => $brands[$p['brand']] ?? 1,
-                'name' => $p['name'],
-                'slug' => $p['slug'],
-                'description' => $p['description'],
-                'price' => $p['price'],
-                'discount_price' => $p['discount_price'],
-                'stock_qty' => $p['stock_qty'],
-                'sku' => $p['sku'],
-                'image' => $p['image'],
-                'status' => 'active',
-            ]);
+            ProductModel::updateOrCreate(
+                ['slug' => $p['slug']],
+                [
+                    'category_id' => $categories[$p['category']] ?? 1,
+                    'brand_id' => $brands[$p['brand']] ?? 1,
+                    'name' => $p['name'],
+                    'description' => $p['description'],
+                    'price' => $p['price'],
+                    'discount_price' => $p['discount_price'],
+                    'stock_qty' => $p['stock_qty'],
+                    'sku' => $p['sku'],
+                    'image' => $p['image'],
+                    'status' => 'active',
+                ]
+            );
         }
     }
 }
+
 

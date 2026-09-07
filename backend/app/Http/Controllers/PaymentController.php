@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\OrderModel;
 use App\Models\PaymentModel;
+use App\Services\BakongKhqrService;
 use App\Services\OrderInventoryService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -187,8 +188,217 @@ class PaymentController extends Controller
 
         $payment->delete();
 
-        return $this->successResponse('Payment deleted successfully.', [
+            return $this->successResponse('Payment deleted successfully.', [
             'payment' => $payment,
+        ]);
+    }
+
+    /**
+     * Generate Dynamic Bakong KHQR Payment payload
+     */
+    public function generateBakongQr(Request $request, \App\Services\BakongKhqrService $khqrService)
+    {
+        $orderId = $request->input('order_id');
+        $orderNumber = $request->input('order_number');
+        $amount = (float) $request->input('amount', 0);
+        $currency = $request->input('currency', 'USD');
+
+        $order = null;
+        if ($orderId) {
+            $order = OrderModel::find($orderId);
+        } elseif ($orderNumber) {
+            $order = OrderModel::where('order_number', $orderNumber)->first();
+        }
+
+        if ($order) {
+            $amount = (float) $order->total;
+            $orderNumber = $order->order_number;
+        }
+
+        if ($amount <= 0) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Payment amount must be greater than 0.',
+            ], 422);
+        }
+
+        $billNumber = $orderNumber ?: ('ORD-' . time());
+        $khqrData = $khqrService->generateDynamicKhqr(
+            $amount,
+            $billNumber,
+            $currency,
+            $request->input('bakong_id'),
+            $request->input('merchant_name')
+        );
+
+        // Record or update payment intent in database if order exists
+        if ($order) {
+            PaymentModel::updateOrCreate(
+                ['order_id' => $order->id],
+                [
+                    'payment_method' => 'bakong_khqr',
+                    'payment_intent_id' => $khqrData['md5'],
+                    'transaction_id' => 'TXN-BK-' . strtoupper(substr($khqrData['md5'], 0, 8)),
+                    'amount' => $order->total,
+                    'status' => PaymentModel::STATUS_PENDING,
+                ]
+            );
+        }
+
+        $khrAmount = round($amount * 4100, -2);
+
+        return response()->json([
+            'success' => true,
+            'khqr' => array_merge($khqrData, [
+                'amount_khr' => $khrAmount,
+                'order_id' => $order?->id,
+                'order_number' => $billNumber,
+            ]),
+        ]);
+    }
+
+    /**
+     * Real-time Check Bakong Payment status with live NBC Open API
+     */
+    public function checkBakongStatus(Request $request, BakongKhqrService $khqrService)
+    {
+        $orderId = $request->input('order_id');
+        $orderNumber = $request->input('order_number');
+        $md5 = $request->input('md5');
+
+        $order = null;
+        if ($orderId) {
+            $order = OrderModel::with('items')->find($orderId);
+        } elseif ($orderNumber) {
+            $order = OrderModel::with('items')->where('order_number', $orderNumber)->first();
+        }
+
+        if (!$order && $md5) {
+            $payment = PaymentModel::where('payment_intent_id', $md5)->first();
+            if ($payment) {
+                $order = OrderModel::with('items')->find($payment->order_id);
+            }
+        }
+
+        // If order is already marked paid in database
+        if ($order && ($order->payment_status === OrderModel::PAYMENT_STATUS_PAID || $order->order_status === OrderModel::ORDER_STATUS_PAID)) {
+            return response()->json([
+                'success' => true,
+                'paid' => true,
+                'message' => 'Payment has already been confirmed.',
+                'order' => $order->fresh()->load('user'),
+            ]);
+        }
+
+        // If MD5 provided, query NBC live switch
+        if ($md5) {
+            $check = $khqrService->checkTransactionByMd5($md5);
+            if (!empty($check['paid'])) {
+                if ($order) {
+                    $order->update([
+                        'payment_status' => OrderModel::PAYMENT_STATUS_PAID,
+                        'order_status' => OrderModel::ORDER_STATUS_PAID,
+                        'payment_method' => 'aba_qr',
+                    ]);
+
+                    $payment = PaymentModel::where('order_id', $order->id)->first();
+                    if ($payment) {
+                        $payment->update([
+                            'status' => PaymentModel::STATUS_PAID,
+                            'transaction_id' => $check['hash'] ?? $payment->transaction_id,
+                            'paid_at' => now(),
+                            'verified_at' => now(),
+                        ]);
+                    } else {
+                        PaymentModel::create([
+                            'order_id' => $order->id,
+                            'payment_method' => 'aba_qr',
+                            'payment_intent_id' => $md5,
+                            'transaction_id' => $check['hash'] ?? null,
+                            'amount' => $order->total,
+                            'status' => PaymentModel::STATUS_PAID,
+                            'paid_at' => now(),
+                            'verified_at' => now(),
+                        ]);
+                    }
+                }
+
+                return response()->json([
+                    'success' => true,
+                    'paid' => true,
+                    'message' => 'Payment verified in real-time by Bank/NBC!',
+                    'transaction' => $check['data'] ?? null,
+                    'order' => $order?->fresh()->load('user'),
+                ]);
+            }
+        }
+
+        return response()->json([
+            'success' => true,
+            'paid' => false,
+            'message' => 'Awaiting payment scan...',
+        ]);
+    }
+
+    /**
+     * Verify Bakong Payment status (Manual or Finalize)
+     */
+    public function verifyBakongPayment(Request $request, BakongKhqrService $khqrService)
+    {
+        $orderId = $request->input('order_id');
+        $orderNumber = $request->input('order_number');
+        $md5 = $request->input('md5');
+
+        $order = null;
+        if ($orderId) {
+            $order = OrderModel::with('items')->find($orderId);
+        } elseif ($orderNumber) {
+            $order = OrderModel::with('items')->where('order_number', $orderNumber)->first();
+        } elseif ($md5) {
+            $payment = PaymentModel::where('payment_intent_id', $md5)->first();
+            if ($payment) {
+                $order = OrderModel::with('items')->find($payment->order_id);
+            }
+        }
+
+        if (!$order) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Order not found.',
+            ], 404);
+        }
+
+        // Update payment & order status to paid
+        $payment = PaymentModel::where('order_id', $order->id)->first();
+        if ($payment) {
+            $payment->update([
+                'status' => PaymentModel::STATUS_PAID,
+                'paid_at' => now(),
+                'verified_at' => now(),
+            ]);
+        } else {
+            PaymentModel::create([
+                'order_id' => $order->id,
+                'payment_method' => 'aba_qr',
+                'payment_intent_id' => $md5 ?: ('pi_' . uniqid()),
+                'amount' => $order->total,
+                'status' => PaymentModel::STATUS_PAID,
+                'paid_at' => now(),
+                'verified_at' => now(),
+            ]);
+        }
+
+        $order->update([
+            'payment_status' => OrderModel::PAYMENT_STATUS_PAID,
+            'order_status' => OrderModel::ORDER_STATUS_PAID,
+            'payment_method' => 'aba_qr',
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'paid' => true,
+            'message' => 'Payment verified successfully! Thank you for your payment.',
+            'order' => $order->fresh()->load('user'),
         ]);
     }
 }

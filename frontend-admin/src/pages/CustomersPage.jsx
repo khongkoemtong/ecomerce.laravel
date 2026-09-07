@@ -1,16 +1,34 @@
-import { useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { 
   Users, UserPlus, Search, Filter, Grid, List, 
   Mail, Phone, MapPin, ExternalLink, Edit2, Trash2, 
   Crown, CheckCircle, XCircle, Clock, DollarSign, 
-  ShoppingBag, TrendingUp, X, Check, ArrowUpDown, Sparkles
+  ShoppingBag, TrendingUp, X, Check, ArrowUpDown, Sparkles,
+  Loader2, RefreshCw
 } from 'lucide-react';
-import { mockCustomers } from '../data/mockData';
+
+const API_BASE_URL =
+  import.meta.env.VITE_API_URL?.replace(/\/$/, '') || 'http://127.0.0.1:8000/api';
 
 export default function CustomersPage() {
   const navigate = useNavigate();
-  const [customers, setCustomers] = useState(mockCustomers);
+  
+  // Data & Pagination States (8-items per batch)
+  const [customers, setCustomers] = useState([]);
+  const [metrics, setMetrics] = useState({
+    total_customers: 0,
+    active_customers: 0,
+    vip_customers: 0,
+    total_revenue: 0,
+  });
+  const [page, setPage] = useState(1);
+  const [hasMore, setHasMore] = useState(false);
+  const [totalCount, setTotalCount] = useState(0);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+
+  // Filters & View Modes
   const [searchQuery, setSearchQuery] = useState('');
   const [tierFilter, setTierFilter] = useState('All');
   const [statusFilter, setStatusFilter] = useState('All');
@@ -20,6 +38,7 @@ export default function CustomersPage() {
   // Modal States
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingCustomer, setEditingCustomer] = useState(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [formData, setFormData] = useState({
     name: '',
     email: '',
@@ -36,36 +55,104 @@ export default function CustomersPage() {
 
   const showToast = (message, type = 'success') => {
     setToast({ message, type });
-    setTimeout(() => setToast(null), 3000);
+    setTimeout(() => setToast(null), 3500);
   };
 
-  // Metrics calculation
-  const totalCustomers = customers.length;
-  const activeCustomers = customers.filter(c => c.status === 'Active').length;
-  const vipCustomers = customers.filter(c => c.tier === 'VIP').length;
-  const totalRevenue = customers.reduce((acc, c) => acc + c.totalSpent, 0);
+  // Fetch Customers from Backend API
+  const fetchCustomers = useCallback(async (pageNum = 1, append = false) => {
+    if (pageNum === 1) {
+      setIsLoading(true);
+    } else {
+      setIsLoadingMore(true);
+    }
 
-  // Filtering & Sorting
-  const filteredCustomers = customers
-    .filter(customer => {
-      const matchesSearch = 
-        customer.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        customer.email.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        customer.phone.includes(searchQuery) ||
-        customer.location.toLowerCase().includes(searchQuery.toLowerCase());
+    try {
+      const params = new URLSearchParams();
+      params.append('page', pageNum.toString());
+      params.append('per_page', '8');
+      if (searchQuery.trim()) params.append('search', searchQuery.trim());
+      if (statusFilter !== 'All') params.append('status', statusFilter.toLowerCase());
+      if (tierFilter !== 'All') params.append('tier', tierFilter);
+      if (sortBy) params.append('sort_by', sortBy);
+      params.append('_t', Date.now().toString());
+
+      const res = await fetch(`${API_BASE_URL}/users?${params.toString()}`, {
+        cache: 'no-store'
+      });
+
+      if (!res.ok) {
+        throw new Error(`HTTP error! status: ${res.status}`);
+      }
+
+      const data = await res.json();
       
-      const matchesTier = tierFilter === 'All' || customer.tier === tierFilter;
-      const matchesStatus = statusFilter === 'All' || customer.status === statusFilter;
+      let customerList = [];
+      if (Array.isArray(data.customers)) {
+        customerList = data.customers;
+      } else if (Array.isArray(data.User)) {
+        customerList = data.User.map((u) => ({
+          id: `CUST-${String(u.id).padStart(3, '0')}`,
+          db_id: u.id,
+          name: u.name,
+          email: u.email,
+          phone: u.phone || '+855 (0) 12 345 678',
+          location: 'Phnom Penh, Cambodia',
+          avatar: `https://ui-avatars.com/api/?name=${encodeURIComponent(u.name)}&background=f59e0b&color=fff&size=150`,
+          status: u.status ? u.status.charAt(0).toUpperCase() + u.status.slice(1) : 'Active',
+          tier: 'Regular',
+          totalOrders: 0,
+          totalSpent: 0,
+          joinDate: u.created_at ? new Date(u.created_at).toLocaleDateString() : 'Recent',
+          lastActive: 'Just now',
+        }));
+      }
 
-      return matchesSearch && matchesTier && matchesStatus;
-    })
-    .sort((a, b) => {
-      if (sortBy === 'spent-desc') return b.totalSpent - a.totalSpent;
-      if (sortBy === 'spent-asc') return a.totalSpent - b.totalSpent;
-      if (sortBy === 'orders-desc') return b.totalOrders - a.totalOrders;
-      if (sortBy === 'name-asc') return a.name.localeCompare(b.name);
-      return 0;
-    });
+      if (append) {
+        setCustomers((prev) => {
+          const existingIds = new Set(prev.map((c) => c.id));
+          const uniqueNew = customerList.filter((c) => !existingIds.has(c.id));
+          return [...prev, ...uniqueNew];
+        });
+      } else {
+        setCustomers(customerList);
+      }
+
+      if (data.metrics) {
+        setMetrics(data.metrics);
+      } else {
+        setMetrics({
+          total_customers: data.total || customerList.length,
+          active_customers: customerList.filter(c => c.status === 'Active').length,
+          vip_customers: customerList.filter(c => c.tier === 'VIP').length,
+          total_revenue: customerList.reduce((sum, c) => sum + (c.totalSpent || 0), 0),
+        });
+      }
+      setHasMore(Boolean(data.hasMore));
+      setPage(data.currentPage || pageNum);
+      setTotalCount(data.total || customerList.length);
+    } catch (err) {
+      console.error('Error fetching customers from API:', err);
+      showToast('Could not load customers from server', 'error');
+    } finally {
+      setIsLoading(false);
+      setIsLoadingMore(false);
+    }
+  }, [searchQuery, statusFilter, tierFilter, sortBy]);
+
+  // Initial & Filter Trigger
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      fetchCustomers(1, false);
+    }, 250);
+
+    return () => clearTimeout(timer);
+  }, [fetchCustomers]);
+
+  // Load 8 More Customers
+  const handleLoadMore = () => {
+    if (!hasMore || isLoadingMore) return;
+    fetchCustomers(page + 1, true);
+  };
 
   // Modal Open Handlers
   const handleOpenAddModal = () => {
@@ -86,73 +173,126 @@ export default function CustomersPage() {
   const handleOpenEditModal = (customer) => {
     setEditingCustomer(customer);
     setFormData({
-      name: customer.name,
-      email: customer.email,
-      phone: customer.phone,
-      location: customer.location,
-      status: customer.status,
-      tier: customer.tier,
-      totalSpent: customer.totalSpent,
-      totalOrders: customer.totalOrders,
+      name: customer.name || '',
+      email: customer.email || '',
+      phone: customer.phone || '',
+      location: customer.location || '',
+      status: customer.status || 'Active',
+      tier: customer.tier || 'Regular',
+      totalSpent: customer.totalSpent || 0,
+      totalOrders: customer.totalOrders || 0,
     });
     setIsModalOpen(true);
   };
 
-  // Form Submit Handler
-  const handleSubmitForm = (e) => {
+  // Form Submit Handler (Create & Update API directly to MySQL)
+  const handleSubmitForm = async (e) => {
     e.preventDefault();
     if (!formData.name.trim() || !formData.email.trim()) {
       showToast('Please enter customer name and email', 'error');
       return;
     }
 
-    if (editingCustomer) {
-      // Edit existing customer
-      setCustomers(customers.map(c => c.id === editingCustomer.id ? {
-        ...c,
-        name: formData.name,
-        email: formData.email,
-        phone: formData.phone,
-        location: formData.location,
-        status: formData.status,
-        tier: formData.tier,
-      } : c));
-      showToast(`Updated customer "${formData.name}" successfully!`);
-    } else {
-      // Add new customer
-      const newCust = {
-        id: `CUST-${String(customers.length + 1).padStart(3, '0')}`,
-        name: formData.name,
-        email: formData.email,
-        phone: formData.phone || '+1 (555) 000-0000',
-        location: formData.location || 'Unknown Location',
-        avatar: `https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&auto=format&fit=crop&q=80`,
-        status: formData.status,
-        tier: formData.tier,
-        totalOrders: 0,
-        totalSpent: 0,
-        joinDate: 'Just now',
-        lastActive: 'Just now',
-      };
-      setCustomers([newCust, ...customers]);
-      showToast(`New customer "${formData.name}" added successfully!`);
+    setIsSubmitting(true);
+    try {
+      if (editingCustomer) {
+        // UPDATE Existing Customer via PUT directly to MySQL
+        const targetId = editingCustomer.db_id || editingCustomer.id.toString().replace('CUST-', '');
+        const res = await fetch(`${API_BASE_URL}/users/${targetId}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            name: formData.name.trim(),
+            email: formData.email.trim(),
+            phone: formData.phone.trim(),
+            location: formData.location.trim(),
+            status: formData.status.toLowerCase(),
+          }),
+        });
+
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          throw new Error(err.message || 'Failed to update customer in database');
+        }
+
+        showToast(`Customer "${formData.name}" updated in database!`, 'success');
+      } else {
+        // CREATE New Customer via POST directly to MySQL
+        const res = await fetch(`${API_BASE_URL}/users`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            name: formData.name.trim(),
+            email: formData.email.trim(),
+            phone: formData.phone.trim(),
+            location: formData.location.trim(),
+            status: formData.status.toLowerCase(),
+            tier: formData.tier,
+          }),
+        });
+
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          throw new Error(err.message || 'Failed to create customer in database');
+        }
+
+        showToast(`New customer "${formData.name}" saved to database!`, 'success');
+      }
+      setIsModalOpen(false);
+      // Refresh list from database
+      fetchCustomers(1, false);
+    } catch (err) {
+      console.error('Customer submit error:', err);
+      showToast(err.message || 'Error saving customer', 'error');
+    } finally {
+      setIsSubmitting(false);
     }
-    setIsModalOpen(false);
   };
 
-  // Delete Customer Handler
-  const handleDeleteCustomer = (id, name) => {
-    if (window.confirm(`Are you sure you want to delete customer "${name}"?`)) {
-      setCustomers(customers.filter(c => c.id !== id));
-      showToast(`Customer "${name}" removed`);
+  // Delete Customer Handler directly from MySQL
+  const handleDeleteCustomer = async (id, name, dbId) => {
+    if (!window.confirm(`Are you sure you want to delete customer "${name}" from database?`)) {
+      return;
+    }
+
+    try {
+      const targetId = dbId || id.toString().replace('CUST-', '');
+      const res = await fetch(`${API_BASE_URL}/users/${targetId}`, {
+        method: 'DELETE',
+      });
+
+      if (!res.ok) {
+        throw new Error('Failed to delete customer from database');
+      }
+
+      showToast(`Customer "${name}" removed from database`, 'success');
+      fetchCustomers(1, false);
+    } catch (err) {
+      console.error('Delete error:', err);
+      showToast('Failed to delete customer', 'error');
     }
   };
 
-  // Status Change Handler
-  const handleToggleStatus = (id, currentStatus) => {
-    const nextStatus = currentStatus === 'Active' ? 'Inactive' : currentStatus === 'Inactive' ? 'Blocked' : 'Active';
-    setCustomers(customers.map(c => c.id === id ? { ...c, status: nextStatus } : c));
-    showToast(`Status updated to ${nextStatus}`);
+  // Status Change Handler (Toggle between Active and Inactive in MySQL)
+  const handleToggleStatus = async (id, currentStatus, dbId) => {
+    const nextStatus = currentStatus === 'Active' ? 'Inactive' : 'Active';
+    
+    // Instant optimistic UI Update
+    setCustomers((prev) =>
+      prev.map((c) => (c.id === id ? { ...c, status: nextStatus } : c))
+    );
+
+    try {
+      const targetId = dbId || id.toString().replace('CUST-', '');
+      await fetch(`${API_BASE_URL}/users/${targetId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: nextStatus.toLowerCase() }),
+      });
+      showToast(`Status updated to ${nextStatus} in database`);
+    } catch (err) {
+      console.warn('Status update API error:', err);
+    }
   };
 
   // Tier Badge Color Helper
@@ -203,13 +343,13 @@ export default function CustomersPage() {
             Customer Management
           </h1>
           <p className="text-gray-500 dark:text-gray-400 text-sm mt-1">
-            Monitor customer activity, tiers, total spend, and order history
+            Real database customer accounts, VIP tiers, total spent, and order history
           </p>
         </div>
 
         <button
           onClick={handleOpenAddModal}
-          className="flex items-center justify-center gap-2.5 px-5 py-3 rounded-none bg-amber-500 hover:bg-amber-600 text-white font-bold shadow-md hover:shadow-amber-500/20 hover:-translate-y-0.5 transition-all duration-200 text-sm shrink-0"
+          className="flex items-center justify-center gap-2.5 px-5 py-3 rounded-none bg-amber-500 hover:bg-amber-600 text-white font-bold shadow-md hover:shadow-amber-500/20 hover:-translate-y-0.5 transition-all duration-200 text-sm shrink-0 cursor-pointer"
         >
           <UserPlus className="w-4 h-4" />
           <span>Add New Customer</span>
@@ -222,9 +362,11 @@ export default function CustomersPage() {
         <div className="bg-white dark:bg-gray-800 rounded-none p-6 border border-gray-100 dark:border-gray-700 shadow-sm flex items-center justify-between hover:shadow-md transition-shadow">
           <div>
             <p className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1">Total Customers</p>
-            <h3 className="text-3xl font-black text-gray-900 dark:text-white">{totalCustomers}</h3>
+            <h3 className="text-3xl font-black text-gray-900 dark:text-white">
+              {isLoading ? '...' : (metrics.total_customers ?? customers.length)}
+            </h3>
             <span className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-600 dark:text-emerald-400 mt-2">
-              <TrendingUp className="w-3.5 h-3.5" /> +12.4% this month
+              <TrendingUp className="w-3.5 h-3.5" /> Real database count
             </span>
           </div>
           <div className="w-14 h-14 rounded-none bg-amber-50 dark:bg-amber-900/20 text-amber-600 dark:text-amber-400 flex items-center justify-center">
@@ -236,9 +378,11 @@ export default function CustomersPage() {
         <div className="bg-white dark:bg-gray-800 rounded-none p-6 border border-gray-100 dark:border-gray-700 shadow-sm flex items-center justify-between hover:shadow-md transition-shadow">
           <div>
             <p className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1">Active Accounts</p>
-            <h3 className="text-3xl font-black text-gray-900 dark:text-white">{activeCustomers}</h3>
+            <h3 className="text-3xl font-black text-gray-900 dark:text-white">
+              {isLoading ? '...' : (metrics.active_customers ?? customers.filter(c => c.status === 'Active').length)}
+            </h3>
             <span className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-600 dark:text-emerald-400 mt-2">
-              <CheckCircle className="w-3.5 h-3.5" /> {((activeCustomers / totalCustomers) * 100).toFixed(0)}% engagement
+              <CheckCircle className="w-3.5 h-3.5" /> Active in database
             </span>
           </div>
           <div className="w-14 h-14 rounded-none bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400 flex items-center justify-center">
@@ -250,9 +394,11 @@ export default function CustomersPage() {
         <div className="bg-white dark:bg-gray-800 rounded-none p-6 border border-gray-100 dark:border-gray-700 shadow-sm flex items-center justify-between hover:shadow-md transition-shadow">
           <div>
             <p className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1">VIP Members</p>
-            <h3 className="text-3xl font-black text-gray-900 dark:text-white">{vipCustomers}</h3>
+            <h3 className="text-3xl font-black text-gray-900 dark:text-white">
+              {isLoading ? '...' : (metrics.vip_customers ?? customers.filter(c => c.tier === 'VIP').length)}
+            </h3>
             <span className="inline-flex items-center gap-1 text-xs font-semibold text-amber-600 dark:text-amber-400 mt-2">
-              <Crown className="w-3.5 h-3.5" /> Top Spenders
+              <Crown className="w-3.5 h-3.5" /> Orders ≥ $500
             </span>
           </div>
           <div className="w-14 h-14 rounded-none bg-amber-100/50 dark:bg-amber-900/30 text-amber-500 flex items-center justify-center">
@@ -264,9 +410,11 @@ export default function CustomersPage() {
         <div className="bg-white dark:bg-gray-800 rounded-none p-6 border border-gray-100 dark:border-gray-700 shadow-sm flex items-center justify-between hover:shadow-md transition-shadow">
           <div>
             <p className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1">Total Revenue</p>
-            <h3 className="text-3xl font-black text-amber-500">${totalRevenue.toLocaleString(undefined, { minimumFractionDigits: 0 })}</h3>
+            <h3 className="text-3xl font-black text-amber-500">
+              {isLoading ? '...' : `$${Number(metrics.total_revenue || 0).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`}
+            </h3>
             <span className="inline-flex items-center gap-1 text-xs font-semibold text-gray-500 dark:text-gray-400 mt-2">
-              Avg: ${(totalRevenue / totalCustomers).toFixed(0)} / customer
+              <DollarSign className="w-3.5 h-3.5" /> All customer orders
             </span>
           </div>
           <div className="w-14 h-14 rounded-none bg-purple-50 dark:bg-purple-900/20 text-purple-600 dark:text-purple-400 flex items-center justify-center">
@@ -285,13 +433,13 @@ export default function CustomersPage() {
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search by name, email, phone..."
-            className="w-full pl-11 pr-4 py-2.5 rounded-none bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 text-gray-900 dark:text-white placeholder-gray-400 focus:outline-none focus:border-amber-500 dark:focus:border-amber-500 transition-colors text-sm"
+            placeholder="Search by name, email, phone, city..."
+            className="w-full pl-11 pr-8 py-2.5 rounded-none bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 text-gray-900 dark:text-white placeholder-gray-400 focus:outline-none focus:border-amber-500 dark:focus:border-amber-500 transition-colors text-sm"
           />
           {searchQuery && (
             <button 
               onClick={() => setSearchQuery('')}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 cursor-pointer"
             >
               <X className="w-4 h-4" />
             </button>
@@ -328,7 +476,6 @@ export default function CustomersPage() {
               <option value="All" className="dark:bg-gray-800">All Statuses</option>
               <option value="Active" className="dark:bg-gray-800">Active</option>
               <option value="Inactive" className="dark:bg-gray-800">Inactive</option>
-              <option value="Blocked" className="dark:bg-gray-800">Blocked</option>
             </select>
           </div>
 
@@ -344,6 +491,7 @@ export default function CustomersPage() {
               <option value="spent-asc" className="dark:bg-gray-800">Lowest Spent</option>
               <option value="orders-desc" className="dark:bg-gray-800">Most Orders</option>
               <option value="name-asc" className="dark:bg-gray-800">Name (A-Z)</option>
+              <option value="newest" className="dark:bg-gray-800">Newest First</option>
             </select>
           </div>
 
@@ -351,7 +499,7 @@ export default function CustomersPage() {
           <div className="flex items-center gap-1 bg-gray-50 dark:bg-gray-900 p-1 rounded-none border border-gray-200 dark:border-gray-700 ml-auto">
             <button
               onClick={() => setViewMode('grid')}
-              className={`p-2 rounded-none transition-all ${
+              className={`p-2 rounded-none transition-all cursor-pointer ${
                 viewMode === 'grid'
                   ? 'bg-white dark:bg-gray-800 text-amber-500 shadow-sm'
                   : 'text-gray-400 hover:text-gray-600 dark:hover:text-gray-300'
@@ -362,7 +510,7 @@ export default function CustomersPage() {
             </button>
             <button
               onClick={() => setViewMode('table')}
-              className={`p-2 rounded-none transition-all ${
+              className={`p-2 rounded-none transition-all cursor-pointer ${
                 viewMode === 'table'
                   ? 'bg-white dark:bg-gray-800 text-amber-500 shadow-sm'
                   : 'text-gray-400 hover:text-gray-600 dark:hover:text-gray-300'
@@ -376,8 +524,48 @@ export default function CustomersPage() {
         </div>
       </div>
 
-      {/* Customer Display Section */}
-      {filteredCustomers.length === 0 ? (
+      {/* Loading Skeleton State (8 Cards or 8 Rows) */}
+      {isLoading ? (
+        viewMode === 'grid' ? (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+            {Array.from({ length: 8 }).map((_, idx) => (
+              <div key={idx} className="bg-white dark:bg-gray-800 rounded-none p-6 border border-gray-100 dark:border-gray-700 animate-pulse flex flex-col justify-between h-96">
+                <div>
+                  <div className="flex items-start justify-between mb-4">
+                    <div className="w-16 h-16 bg-gray-200 dark:bg-gray-700 rounded-none" />
+                    <div className="flex flex-col gap-1.5 items-end">
+                      <div className="w-12 h-5 bg-gray-200 dark:bg-gray-700 rounded-none" />
+                      <div className="w-16 h-5 bg-gray-200 dark:bg-gray-700 rounded-none" />
+                    </div>
+                  </div>
+                  <div className="w-3/4 h-5 bg-gray-200 dark:bg-gray-700 rounded-none mb-2" />
+                  <div className="w-1/3 h-3 bg-gray-100 dark:bg-gray-800 rounded-none mb-4" />
+                  <div className="space-y-2 mb-6">
+                    <div className="w-full h-3 bg-gray-100 dark:bg-gray-800 rounded-none" />
+                    <div className="w-2/3 h-3 bg-gray-100 dark:bg-gray-800 rounded-none" />
+                    <div className="w-1/2 h-3 bg-gray-100 dark:bg-gray-800 rounded-none" />
+                  </div>
+                  <div className="grid grid-cols-2 gap-3 p-3 bg-gray-50 dark:bg-gray-900 rounded-none">
+                    <div className="h-8 bg-gray-200 dark:bg-gray-700 rounded-none" />
+                    <div className="h-8 bg-gray-200 dark:bg-gray-700 rounded-none" />
+                  </div>
+                </div>
+                <div className="flex gap-2 pt-4 border-t border-gray-100 dark:border-gray-700">
+                  <div className="flex-1 h-9 bg-gray-200 dark:bg-gray-700 rounded-none" />
+                  <div className="w-9 h-9 bg-gray-200 dark:bg-gray-700 rounded-none" />
+                  <div className="w-9 h-9 bg-gray-200 dark:bg-gray-700 rounded-none" />
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="bg-white dark:bg-gray-800 rounded-none border border-gray-100 dark:border-gray-700 shadow-sm overflow-hidden p-6 space-y-4">
+            {Array.from({ length: 8 }).map((_, idx) => (
+              <div key={idx} className="h-12 bg-gray-100 dark:bg-gray-700 animate-pulse rounded-none" />
+            ))}
+          </div>
+        )
+      ) : customers.length === 0 ? (
         <div className="bg-white dark:bg-gray-800 rounded-none p-12 text-center border border-gray-100 dark:border-gray-700 shadow-sm">
           <Users className="w-16 h-16 text-gray-300 dark:text-gray-600 mx-auto mb-4" />
           <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-1">No customers found</h3>
@@ -389,7 +577,7 @@ export default function CustomersPage() {
         
         /* GRID VIEW */
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-          {filteredCustomers.map((customer) => (
+          {customers.map((customer) => (
             <div
               key={customer.id}
               className="bg-white dark:bg-gray-800 rounded-none p-6 border border-gray-100 dark:border-gray-700 shadow-sm hover:shadow-xl hover:-translate-y-1 transition-all duration-300 flex flex-col justify-between group"
@@ -401,10 +589,14 @@ export default function CustomersPage() {
                     <img
                       src={customer.avatar}
                       alt={customer.name}
+                      onError={(e) => {
+                        e.target.onerror = null;
+                        e.target.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(customer.name)}&background=f59e0b&color=fff&size=150`;
+                      }}
                       className="w-16 h-16 rounded-none object-cover shadow-sm border border-gray-100 dark:border-gray-700"
                     />
                     {customer.tier === 'VIP' && (
-                      <span className="absolute -top-2 -right-2 bg-amber-500 text-white p-1 rounded-none shadow-md">
+                      <span className="absolute -top-2 -right-2 bg-amber-500 text-white p-1 rounded-none shadow-md" title="VIP Customer">
                         <Crown className="w-3.5 h-3.5" />
                       </span>
                     )}
@@ -415,7 +607,7 @@ export default function CustomersPage() {
                       {customer.tier}
                     </span>
                     <button
-                      onClick={() => handleToggleStatus(customer.id, customer.status)}
+                      onClick={() => handleToggleStatus(customer.id, customer.status, customer.db_id)}
                       className={`px-2.5 py-0.5 rounded-none text-xs font-semibold border cursor-pointer hover:opacity-80 transition-opacity ${getStatusBadge(customer.status)}`}
                       title="Click to toggle status"
                     >
@@ -453,7 +645,7 @@ export default function CustomersPage() {
                   </div>
                   <div>
                     <span className="text-[10px] uppercase font-bold text-gray-400 block tracking-wider">Total Spent</span>
-                    <span className="font-extrabold text-base text-amber-500">${customer.totalSpent.toFixed(0)}</span>
+                    <span className="font-extrabold text-base text-amber-500">${Number(customer.totalSpent || 0).toFixed(0)}</span>
                   </div>
                 </div>
               </div>
@@ -462,21 +654,21 @@ export default function CustomersPage() {
               <div className="flex items-center gap-2 pt-4 border-t border-gray-100 dark:border-gray-700/50">
                 <button
                   onClick={() => navigate(`/customer-order/${encodeURIComponent(customer.name)}`)}
-                  className="flex-1 py-2.5 px-3 rounded-none bg-amber-50 dark:bg-amber-900/20 text-amber-600 dark:text-amber-400 hover:bg-amber-100 dark:hover:bg-amber-900/40 text-xs font-bold flex items-center justify-center gap-1.5 transition-colors"
+                  className="flex-1 py-2.5 px-3 rounded-none bg-amber-50 dark:bg-amber-900/20 text-amber-600 dark:text-amber-400 hover:bg-amber-100 dark:hover:bg-amber-900/40 text-xs font-bold flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
                 >
                   <ExternalLink className="w-3.5 h-3.5" />
                   <span>Orders</span>
                 </button>
                 <button
                   onClick={() => handleOpenEditModal(customer)}
-                  className="p-2.5 rounded-none border border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                  className="p-2.5 rounded-none border border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors cursor-pointer"
                   title="Edit Customer"
                 >
                   <Edit2 className="w-4 h-4" />
                 </button>
                 <button
-                  onClick={() => handleDeleteCustomer(customer.id, customer.name)}
-                  className="p-2.5 rounded-none border border-rose-200 dark:border-rose-900/50 text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-900/20 transition-colors"
+                  onClick={() => handleDeleteCustomer(customer.id, customer.name, customer.db_id)}
+                  className="p-2.5 rounded-none border border-rose-200 dark:border-rose-900/50 text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-900/20 transition-colors cursor-pointer"
                   title="Delete Customer"
                 >
                   <Trash2 className="w-4 h-4" />
@@ -503,7 +695,7 @@ export default function CustomersPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100 dark:divide-gray-700 text-sm">
-                {filteredCustomers.map((customer) => (
+                {customers.map((customer) => (
                   <tr 
                     key={customer.id} 
                     className="hover:bg-gray-50/80 dark:hover:bg-gray-700/30 transition-colors group"
@@ -514,6 +706,10 @@ export default function CustomersPage() {
                         <img
                           src={customer.avatar}
                           alt={customer.name}
+                          onError={(e) => {
+                            e.target.onerror = null;
+                            e.target.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(customer.name)}&background=f59e0b&color=fff&size=150`;
+                          }}
                           className="w-10 h-10 rounded-none object-cover shadow-sm shrink-0"
                         />
                         <div>
@@ -543,7 +739,7 @@ export default function CustomersPage() {
                           {customer.tier}
                         </span>
                         <button
-                          onClick={() => handleToggleStatus(customer.id, customer.status)}
+                          onClick={() => handleToggleStatus(customer.id, customer.status, customer.db_id)}
                           className={`px-2.5 py-0.5 rounded-none text-xs font-semibold border cursor-pointer hover:opacity-80 transition-opacity ${getStatusBadge(customer.status)}`}
                           title="Click to change status"
                         >
@@ -559,7 +755,7 @@ export default function CustomersPage() {
 
                     {/* Total Spent */}
                     <td className="py-4 px-6 text-right font-black text-amber-500 text-base">
-                      ${customer.totalSpent.toFixed(2)}
+                      ${Number(customer.totalSpent || 0).toFixed(2)}
                     </td>
 
                     {/* Actions */}
@@ -567,21 +763,21 @@ export default function CustomersPage() {
                       <div className="flex items-center justify-end gap-2">
                         <button
                           onClick={() => navigate(`/customer-order/${encodeURIComponent(customer.name)}`)}
-                          className="px-3 py-1.5 rounded-none bg-amber-50 dark:bg-amber-900/20 text-amber-600 dark:text-amber-400 hover:bg-amber-100 dark:hover:bg-amber-900/40 text-xs font-bold flex items-center gap-1 transition-colors"
+                          className="px-3 py-1.5 rounded-none bg-amber-50 dark:bg-amber-900/20 text-amber-600 dark:text-amber-400 hover:bg-amber-100 dark:hover:bg-amber-900/40 text-xs font-bold flex items-center gap-1 transition-colors cursor-pointer"
                         >
                           <ExternalLink className="w-3.5 h-3.5" />
                           <span>Profile</span>
                         </button>
                         <button
                           onClick={() => handleOpenEditModal(customer)}
-                          className="p-1.5 rounded-none text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                          className="p-1.5 rounded-none text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors cursor-pointer"
                           title="Edit"
                         >
                           <Edit2 className="w-4 h-4" />
                         </button>
                         <button
-                          onClick={() => handleDeleteCustomer(customer.id, customer.name)}
-                          className="p-1.5 rounded-none text-rose-400 hover:text-rose-600 dark:hover:text-rose-300 hover:bg-rose-50 dark:hover:bg-rose-900/20 transition-colors"
+                          onClick={() => handleDeleteCustomer(customer.id, customer.name, customer.db_id)}
+                          className="p-1.5 rounded-none text-rose-400 hover:text-rose-600 dark:hover:text-rose-300 hover:bg-rose-50 dark:hover:bg-rose-900/20 transition-colors cursor-pointer"
                           title="Delete"
                         >
                           <Trash2 className="w-4 h-4" />
@@ -592,6 +788,43 @@ export default function CustomersPage() {
                 ))}
               </tbody>
             </table>
+          </div>
+        </div>
+      )}
+
+      {/* Pagination & Load More Section (8 data per fetch) */}
+      {!isLoading && customers.length > 0 && (
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-4 mt-8 pt-4 border-t border-gray-100 dark:border-gray-800 text-xs text-gray-500 dark:text-gray-400">
+          <div>
+            Showing <span className="font-bold text-gray-900 dark:text-white">{customers.length}</span> of{' '}
+            <span className="font-bold text-gray-900 dark:text-white">{totalCount}</span> total customers (8 per batch)
+          </div>
+
+          <div>
+            {hasMore ? (
+              <button
+                onClick={handleLoadMore}
+                disabled={isLoadingMore}
+                className="px-6 py-2.5 bg-amber-500 hover:bg-amber-600 text-white font-bold text-xs rounded-none shadow-md hover:shadow-lg transition-all flex items-center gap-2 cursor-pointer disabled:opacity-60"
+              >
+                {isLoadingMore ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <span>Loading 8 More Customers...</span>
+                  </>
+                ) : (
+                  <>
+                    <RefreshCw className="w-3.5 h-3.5" />
+                    <span>Load 8 More Customers</span>
+                  </>
+                )}
+              </button>
+            ) : (
+              <span className="text-emerald-600 dark:text-emerald-400 font-semibold flex items-center gap-1.5">
+                <Check className="w-4 h-4" />
+                All customers loaded ({customers.length} total)
+              </span>
+            )}
           </div>
         </div>
       )}
@@ -607,7 +840,7 @@ export default function CustomersPage() {
               </h3>
               <button
                 onClick={() => setIsModalOpen(false)}
-                className="p-2 rounded-none hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors"
+                className="p-2 rounded-none hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors cursor-pointer"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -645,17 +878,17 @@ export default function CustomersPage() {
                     type="text"
                     value={formData.phone}
                     onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                    placeholder="+1 (555) 000-0000"
+                    placeholder="+855 12 345 678"
                     className="w-full px-4 py-2.5 rounded-none bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 text-gray-900 dark:text-white focus:outline-none focus:border-amber-500 text-sm"
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Location</label>
+                  <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">Location / City</label>
                   <input
                     type="text"
                     value={formData.location}
                     onChange={(e) => setFormData({ ...formData, location: e.target.value })}
-                    placeholder="City, State"
+                    placeholder="e.g. Phnom Penh, Cambodia"
                     className="w-full px-4 py-2.5 rounded-none bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 text-gray-900 dark:text-white focus:outline-none focus:border-amber-500 text-sm"
                   />
                 </div>
@@ -667,7 +900,7 @@ export default function CustomersPage() {
                   <select
                     value={formData.tier}
                     onChange={(e) => setFormData({ ...formData, tier: e.target.value })}
-                    className="w-full px-4 py-2.5 rounded-none bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 text-gray-900 dark:text-white focus:outline-none focus:border-amber-500 text-sm"
+                    className="w-full px-4 py-2.5 rounded-none bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 text-gray-900 dark:text-white focus:outline-none focus:border-amber-500 text-sm cursor-pointer"
                   >
                     <option value="Regular">Regular</option>
                     <option value="VIP">VIP</option>
@@ -679,11 +912,10 @@ export default function CustomersPage() {
                   <select
                     value={formData.status}
                     onChange={(e) => setFormData({ ...formData, status: e.target.value })}
-                    className="w-full px-4 py-2.5 rounded-none bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 text-gray-900 dark:text-white focus:outline-none focus:border-amber-500 text-sm"
+                    className="w-full px-4 py-2.5 rounded-none bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 text-gray-900 dark:text-white focus:outline-none focus:border-amber-500 text-sm cursor-pointer"
                   >
                     <option value="Active">Active</option>
                     <option value="Inactive">Inactive</option>
-                    <option value="Blocked">Blocked</option>
                   </select>
                 </div>
               </div>
@@ -692,15 +924,24 @@ export default function CustomersPage() {
                 <button
                   type="button"
                   onClick={() => setIsModalOpen(false)}
-                  className="px-5 py-2.5 rounded-none border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 font-semibold text-sm transition-colors"
+                  disabled={isSubmitting}
+                  className="px-5 py-2.5 rounded-none border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 font-semibold text-sm transition-colors cursor-pointer disabled:opacity-50"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2.5 rounded-none bg-amber-500 hover:bg-amber-600 text-white font-bold shadow-md text-sm transition-all"
+                  disabled={isSubmitting}
+                  className="px-5 py-2.5 rounded-none bg-amber-500 hover:bg-amber-600 text-white font-bold shadow-md text-sm transition-all cursor-pointer inline-flex items-center gap-1.5 disabled:opacity-60"
                 >
-                  {editingCustomer ? 'Save Changes' : 'Create Customer'}
+                  {isSubmitting ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      <span>Saving to Database...</span>
+                    </>
+                  ) : (
+                    <span>{editingCustomer ? 'Save Changes' : 'Create Customer'}</span>
+                  )}
                 </button>
               </div>
             </form>

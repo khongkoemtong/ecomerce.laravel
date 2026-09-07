@@ -22,8 +22,11 @@ class OrderResource extends JsonResource
             'order_status' => $this->order_status,
             'payment_method' => $this->payment_method,
             'items' => OrderItemResource::collection($this->whenLoaded('items')),
-            'created_at' => $this->created_at,
-            'updated_at' => $this->updated_at,
+            'address' => $this->whenLoaded('address'),
+            'user' => $this->whenLoaded('user'),
+            'created_at' => $this->created_at ? $this->created_at->toISOString() : null,
+            'formatted_date' => $this->created_at ? $this->created_at->format('M d, Y') : null,
+            'updated_at' => $this->updated_at ? $this->updated_at->toISOString() : null,
         ];
     }
 }

@@ -17,19 +17,38 @@ use App\Http\Controllers\UserController;
 use App\Http\Controllers\WishListController;
 use App\Http\Controllers\ChatController;
 use App\Http\Controllers\DashboardController;
+use App\Http\Controllers\InventoryController;
+use App\Http\Controllers\PromotionController;
 
 Route::post('/register',[AuthController::class,'Register'])->middleware('throttle:register');
 Route::post('/login',[AuthController::class,"login"]);
 Route::post('/chat', [ChatController::class, 'chat']);
 
-Route::apiResource('categories', CategoryController::class)->only(['index', 'show']);
-Route::apiResource('brands', BrandController::class)->only(['index', 'show']);
-Route::apiResource('products', ProductController::class)->only(['index', 'show']);
+Route::apiResource('users', UserController::class);
+Route::apiResource('categories', CategoryController::class);
+Route::apiResource('brands', BrandController::class);
+Route::apiResource('products', ProductController::class);
+Route::apiResource('product-images', ProductImageController::class);
+Route::apiResource('roles', RoleController::class);
+Route::apiResource('promotions', PromotionController::class);
+Route::put('/promotions/{id}/toggle-status', [PromotionController::class, 'toggleStatus']);
+
+use App\Http\Controllers\AbaPayWayController;
 
 // Public / Dev Order Line endpoints
 Route::get('/orders-list', [OrderController::class, 'getOrderLineData']);
+Route::get('/user/orders', [OrderController::class, 'myOrders']);
 Route::post('/orders-list/create', [OrderController::class, 'createAdminOrder']);
 Route::put('/orders-list/{id}/status', [OrderController::class, 'updateOrderStatus']);
+Route::post('/checkout', [OrderController::class, 'checkoutStore']);
+Route::post('/payments/bakong/generate-qr', [PaymentController::class, 'generateBakongQr']);
+Route::post('/payments/bakong/check-status', [PaymentController::class, 'checkBakongStatus']);
+Route::post('/payments/bakong/verify', [PaymentController::class, 'verifyBakongPayment']);
+
+// ABA PayWay Gateway Endpoints
+Route::post('/payments/aba/generate-qr', [AbaPayWayController::class, 'generateQr']);
+Route::post('/payments/aba/check-status', [AbaPayWayController::class, 'checkStatus']);
+Route::post('/payments/aba/callback', [AbaPayWayController::class, 'handleCallback']);
 
 // Public / Dev Dashboard endpoints
 Route::prefix('dashboard')->group(function () {
@@ -41,7 +60,12 @@ Route::prefix('dashboard')->group(function () {
     Route::get('/restock-recommendations', [DashboardController::class, 'getRestockRecommendations']);
 });
 
-
+// Inventory, Stock Audit & Analytics endpoints
+Route::prefix('inventory')->group(function () {
+    Route::get('/audit', [InventoryController::class, 'audit']);
+    Route::put('/adjust-stock/{id}', [InventoryController::class, 'adjustStock']);
+    Route::get('/analytics', [InventoryController::class, 'analytics']);
+});
 
 Route::middleware('auth:sanctum')->group(function(){
     Route::get('/me',[AuthController::class,'me']);
@@ -52,19 +76,9 @@ Route::middleware('auth:sanctum')->group(function(){
     Route::apiResource('reviews',ReviewController::class);
     Route::apiResource('wishlists',WishListController::class);
 
-    Route::apiResource('orders',OrderController::class)->only(['index', 'store', 'show']);
-
-    Route::middleware('role:admin')->group(function () {
-        Route::apiResource('roles',RoleController::class);
-        Route::apiResource('users',UserController::class);
-        Route::apiResource('categories',CategoryController::class)->except(['index', 'show']);
-        Route::apiResource('brands',BrandController::class)->except(['index', 'show']);
-        Route::apiResource('products',ProductController::class)->except(['index', 'show']);
-        Route::apiResource('product-images',ProductImageController::class);
-        Route::apiResource('orders',OrderController::class)->only(['update', 'destroy']);
-        Route::apiResource('payments',PaymentController::class);
-        Route::apiResource('shippings',ShippingController::class);
-    });
+    Route::apiResource('orders',OrderController::class);
+    Route::apiResource('payments',PaymentController::class);
+    Route::apiResource('shippings',ShippingController::class);
 });
 
    

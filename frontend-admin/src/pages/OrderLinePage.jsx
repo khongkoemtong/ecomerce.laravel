@@ -16,12 +16,17 @@ import {
   XCircle,
   RefreshCw,
   Edit2,
-  Trash2
+  Trash2,
+  Loader2
 } from 'lucide-react';
 import { initialOrdersData } from '../data/ordersData';
 
+const API_BASE_URL =
+  import.meta.env.VITE_API_URL?.replace(/\/$/, '') || 'http://127.0.0.1:8000/api';
+
 export default function OrderLinePage() {
   const [orders, setOrders] = useState([]);
+  const [productsList, setProductsList] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedChannel, setSelectedChannel] = useState('All');
   const [selectedStatus, setSelectedStatus] = useState('All');
@@ -35,10 +40,29 @@ export default function OrderLinePage() {
   const [isDateDropdownOpen, setIsDateDropdownOpen] = useState(false);
   const [isMoreFiltersOpen, setIsMoreFiltersOpen] = useState(false);
   const [isNewOrderModalOpen, setIsNewOrderModalOpen] = useState(false);
+  const [isCreatingOrder, setIsCreatingOrder] = useState(false);
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   const [importedFile, setImportedFile] = useState(null);
   const [importPreview, setImportPreview] = useState([]);
   const [importStatusMessage, setImportStatusMessage] = useState('');
+
+  // Toast Notification
+  const [toast, setToast] = useState(null);
+  const showToast = (message, type = 'success') => {
+    setToast({ message, type });
+    setTimeout(() => setToast(null), 3500);
+  };
+
+  // Load Products for selection
+  useEffect(() => {
+    fetch(`${API_BASE_URL}/products?per_page=50`)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        const list = data?.products?.data || (Array.isArray(data?.products) ? data.products : []);
+        setProductsList(list);
+      })
+      .catch((e) => console.warn('Could not load products list for orders:', e));
+  }, []);
 
   // Handle Updating Order Status
   const handleUpdateOrderStatus = (orderId, dbId, newStatus) => {
@@ -51,7 +75,7 @@ export default function OrderLinePage() {
     const targetId = dbId || orderId.replace('#', '').trim();
 
     // 3. Put update request to backend database API
-    fetch(`http://127.0.0.1:8000/api/orders-list/${encodeURIComponent(targetId)}/status`, {
+    fetch(`${API_BASE_URL}/orders-list/${encodeURIComponent(targetId)}/status`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ status: newStatus.toLowerCase() }),
@@ -63,9 +87,13 @@ export default function OrderLinePage() {
           setOrders((prev) =>
             prev.map((o) => (o.id === orderId ? { ...o, status: data.status, statusType: data.status.toLowerCase() } : o))
           );
+          showToast(`Order ${orderId} updated to ${data.status}`, 'success');
         }
       })
-      .catch((err) => console.warn('Status update API error:', err));
+      .catch((err) => {
+        console.warn('Status update API error:', err);
+        showToast('Failed to update status on server', 'error');
+      });
   };
 
   // New Order Form State
@@ -75,13 +103,34 @@ export default function OrderLinePage() {
     destination: 'International',
     itemName: '',
     sku: '',
-    onHand: 50
+    price: 150.00,
+    quantity: 1,
+    onHand: 50,
+    status: 'Pending',
+    image: '',
   });
 
   const channelRef = useRef(null);
   const statusRef = useRef(null);
   const dateRef = useRef(null);
   const moreFiltersRef = useRef(null);
+  const productDropdownRef = useRef(null);
+
+  // Searchable Product Dropdown State for Modal
+  const [productSearchQuery, setProductSearchQuery] = useState('');
+  const [isProductDropdownOpen, setIsProductDropdownOpen] = useState(false);
+
+  // Filter products by search query (name or sku)
+  const filteredCatalogProducts = productsList.filter((p) => {
+    if (!productSearchQuery.trim()) return true;
+    const q = productSearchQuery.toLowerCase();
+    return (
+      p.name?.toLowerCase().includes(q) ||
+      p.sku?.toLowerCase().includes(q) ||
+      (p.category && p.category.name && p.category.name.toLowerCase().includes(q)) ||
+      (p.brand && p.brand.name && p.brand.name.toLowerCase().includes(q))
+    );
+  });
 
   // Pagination & Infinite Scroll (Lazy Loading) States
   const [page, setPage] = useState(1);
@@ -102,7 +151,7 @@ export default function OrderLinePage() {
     if (selectedDestination && selectedDestination !== 'All') params.append('destination', selectedDestination);
     params.append('_t', Date.now().toString());
 
-    fetch(`http://127.0.0.1:8000/api/orders-list?${params.toString()}`, { cache: 'no-store' })
+    fetch(`${API_BASE_URL}/orders-list?${params.toString()}`, { cache: 'no-store' })
       .then((res) => (res.ok ? res.json() : null))
       .then((data) => {
         if (data?.orders) {
@@ -131,7 +180,7 @@ export default function OrderLinePage() {
     if (searchQuery) params.append('search', searchQuery);
     params.append('_t', Date.now().toString());
 
-    fetch(`http://127.0.0.1:8000/api/orders-list?${params.toString()}`, { cache: 'no-store' })
+    fetch(`${API_BASE_URL}/orders-list?${params.toString()}`, { cache: 'no-store' })
       .then((res) => (res.ok ? res.json() : null))
       .then((data) => {
         if (data?.orders && data.orders.length > 0) {
@@ -188,6 +237,9 @@ export default function OrderLinePage() {
       if (moreFiltersRef.current && !moreFiltersRef.current.contains(event.target)) {
         setIsMoreFiltersOpen(false);
       }
+      if (productDropdownRef.current && !productDropdownRef.current.contains(event.target)) {
+        setIsProductDropdownOpen(false);
+      }
     }
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
@@ -238,66 +290,101 @@ export default function OrderLinePage() {
   // Filter Orders based on search query (server-side handles status, channel, date, destination)
   const filteredOrders = orders.filter(order => {
     if (!searchQuery) return true;
-    q = searchQuery.toLowerCase();
-    return (constorder.id.toLowerCase().includes(q) ||
-      order.customer.toLowerCase().includes(q) ||
-      (order.subItems && order.subItems.some(sub => sub.name.toLowerCase().includes(q) || sub.sku.toLowerCase().includes(q)))
+    const q = searchQuery.toLowerCase();
+    return (
+      order.id?.toLowerCase().includes(q) ||
+      order.customer?.toLowerCase().includes(q) ||
+      (order.subItems && order.subItems.some(sub => sub.name?.toLowerCase().includes(q) || sub.sku?.toLowerCase().includes(q)))
     );
   }); 
 
-  // Handle Add New Order
-  const handleCreateNewOrder = (e) => {
+  // Handle Add New Order (POST API)
+  const handleCreateNewOrder = async (e) => {
     e.preventDefault();
-    if (!newOrderForm.customer || !newOrderForm.itemName) return;
+    if (!newOrderForm.customer.trim() || !newOrderForm.itemName.trim()) {
+      showToast('Please enter customer name and item name', 'error');
+      return;
+    }
 
-    const newId = `#6${Math.floor(710 + Math.random() * 900)}`;
-    const today = new Date().toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: 'numeric' });
+    setIsCreatingOrder(true);
+    try {
+      const quantityNum = Number(newOrderForm.quantity) || 1;
+      const priceNum = Number(newOrderForm.price) || 150;
+      const totalNum = quantityNum * priceNum;
 
-    const newOrder = {
-      id: newId,
-      date: today,
-      customer: newOrderForm.customer,
-      salesChannel: newOrderForm.salesChannel,
-      salesChannelIcon: newOrderForm.salesChannel.toLowerCase(),
-      destination: newOrderForm.destination,
-      itemsCount: 1,
-      status: 'Pending',
-      statusType: 'pending',
-      isExpanded: true,
-      subItems: [
-        {
-          id: `sub-${Date.now()}`,
-          name: newOrderForm.itemName,
-          sku: newOrderForm.sku || `SKU-${Math.floor(100000 + Math.random() * 900000)}`,
-          image: 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=150&auto=format&fit=crop&q=80',
-          pick: 1,
-          bin: 'A001-010',
-          vendor: 'DEFAULT',
-          onHand: Number(newOrderForm.onHand) || 50
-        }
-      ]
-    };
-
-    setOrders([newOrder, ...orders]);
-
-    // Post to backend database API
-    fetch('http://127.0.0.1:8000/api/orders-list/create', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        customer: newOrderForm.customer,
-        itemName: newOrderForm.itemName,
+      const payload = {
+        customer: newOrderForm.customer.trim(),
+        itemName: newOrderForm.itemName.trim(),
+        sku: newOrderForm.sku.trim() || undefined,
         salesChannel: newOrderForm.salesChannel,
         destination: newOrderForm.destination,
-        total: 150
-      })
-    })
-      .then((res) => res.json())
-      .then((data) => console.log('Order saved in database backend:', data))
-      .catch((err) => console.warn('Order API creation fallback:', err));
+        quantity: quantityNum,
+        price: priceNum,
+        total: totalNum,
+        status: newOrderForm.status || 'Pending'
+      };
 
-    setIsNewOrderModalOpen(false);
-    setNewOrderForm({ customer: '', salesChannel: 'Amazon', destination: 'International', itemName: '', sku: '', onHand: 50 });
+      const res = await fetch(`${API_BASE_URL}/orders-list/create`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.message || 'Failed to create order on server');
+      }
+
+      const data = await res.json();
+      const createdOrd = data.order;
+
+      const newOrder = {
+        id: `#${createdOrd?.order_number || ('6' + Math.floor(710 + Math.random() * 900))}`,
+        db_id: createdOrd?.id,
+        date: new Date().toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: 'numeric' }),
+        customer: newOrderForm.customer,
+        salesChannel: newOrderForm.salesChannel,
+        salesChannelIcon: newOrderForm.salesChannel.toLowerCase(),
+        destination: newOrderForm.destination,
+        itemsCount: quantityNum,
+        status: newOrderForm.status || 'Pending',
+        statusType: (newOrderForm.status || 'Pending').toLowerCase(),
+        isExpanded: true,
+        subItems: [
+          {
+            id: `sub-${Date.now()}`,
+            name: newOrderForm.itemName,
+            sku: newOrderForm.sku || `SKU-${Math.floor(100000 + Math.random() * 900000)}`,
+            image: newOrderForm.image || 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=150&auto=format&fit=crop&q=80',
+            pick: quantityNum,
+            bin: 'A001-010',
+            vendor: 'DEFAULT',
+            onHand: Number(newOrderForm.onHand) || 50
+          }
+        ]
+      };
+
+      setOrders((prev) => [newOrder, ...prev]);
+      showToast(`Order ${newOrder.id} created successfully in database!`, 'success');
+      setIsNewOrderModalOpen(false);
+      setNewOrderForm({
+        customer: '',
+        salesChannel: 'Amazon',
+        destination: 'International',
+        itemName: '',
+        sku: '',
+        price: 150.00,
+        quantity: 1,
+        onHand: 50,
+        status: 'Pending',
+        image: ''
+      });
+    } catch (err) {
+      console.error('Order creation error:', err);
+      showToast(err.message || 'Error creating order', 'error');
+    } finally {
+      setIsCreatingOrder(false);
+    }
   };
 
   // Enhanced Export to Excel / CSV helper
@@ -496,6 +583,18 @@ export default function OrderLinePage() {
 
   return (
     <div className="p-6 md:p-8 space-y-6 bg-[#f8f9fc] dark:bg-gray-950 min-h-screen text-gray-800 dark:text-gray-100 transition-colors duration-200">
+
+      {/* Toast Notification Banner */}
+      {toast && (
+        <div className={`fixed top-5 right-5 z-50 flex items-center gap-3 px-5 py-3.5 rounded-none shadow-2xl text-white font-medium transition-all animate-bounce ${
+          toast.type === 'error' ? 'bg-red-600' :
+          toast.type === 'warning' ? 'bg-amber-600' :
+          toast.type === 'info' ? 'bg-blue-600' : 'bg-emerald-600'
+        }`}>
+          {toast.type === 'error' ? <XCircle className="w-5 h-5" /> : <CheckCircle2 className="w-5 h-5" />}
+          <span className="text-sm">{toast.message}</span>
+        </div>
+      )}
 
       {/* ==================== 1. TOP HEADER & ACTIONS ROW ==================== */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white dark:bg-gray-900 p-6 shadow-sm border border-gray-100 dark:border-gray-800">
@@ -911,7 +1010,7 @@ export default function OrderLinePage() {
       {/* ==================== 4. CREATE NEW ORDER MODAL ==================== */}
       {isNewOrderModalOpen && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center z-50 p-4">
-          <div className="bg-white dark:bg-gray-900 w-full max-w-md border border-gray-200 dark:border-gray-800 shadow-2xl p-6 relative">
+          <div className="bg-white dark:bg-gray-900 w-full max-w-lg border border-gray-200 dark:border-gray-800 shadow-2xl p-6 relative">
             <div className="flex justify-between items-center mb-5 pb-3 border-b border-gray-100 dark:border-gray-800">
               <h3 className="text-lg font-bold text-gray-900 dark:text-white flex items-center gap-2">
                 <ShoppingBag className="w-5 h-5 text-amber-500" />
@@ -919,7 +1018,7 @@ export default function OrderLinePage() {
               </h3>
               <button
                 onClick={() => setIsNewOrderModalOpen(false)}
-                className="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors"
+                className="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors cursor-pointer"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -927,7 +1026,7 @@ export default function OrderLinePage() {
 
             <form onSubmit={handleCreateNewOrder} className="space-y-4 text-xs">
               <div>
-                <label className="block font-semibold text-gray-700 dark:text-gray-300 mb-1">Customer Name</label>
+                <label className="block font-semibold text-gray-700 dark:text-gray-300 mb-1">Customer Name *</label>
                 <input
                   type="text"
                   required
@@ -944,7 +1043,7 @@ export default function OrderLinePage() {
                   <select
                     value={newOrderForm.salesChannel}
                     onChange={(e) => setNewOrderForm({ ...newOrderForm, salesChannel: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none rounded-none"
+                    className="w-full px-3 py-2 border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none rounded-none cursor-pointer"
                   >
                     <option value="Amazon">Amazon</option>
                     <option value="Etsy">Etsy</option>
@@ -957,7 +1056,7 @@ export default function OrderLinePage() {
                   <select
                     value={newOrderForm.destination}
                     onChange={(e) => setNewOrderForm({ ...newOrderForm, destination: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none rounded-none"
+                    className="w-full px-3 py-2 border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none rounded-none cursor-pointer"
                   >
                     <option value="International">International</option>
                     <option value="Domestic">Domestic</option>
@@ -965,54 +1064,229 @@ export default function OrderLinePage() {
                 </div>
               </div>
 
+              {/* Searchable Product Picker */}
+              <div className="relative" ref={productDropdownRef}>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block font-semibold text-gray-700 dark:text-gray-300">
+                    Select Existing Store Product (Searchable)
+                  </label>
+                  {newOrderForm.image && (
+                    <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-medium">
+                      ✓ Product Linked
+                    </span>
+                  )}
+                </div>
+
+                {/* Search input / Trigger */}
+                <div className="relative">
+                  <div className="absolute inset-y-0 left-0 pl-2.5 flex items-center pointer-events-none text-gray-400">
+                    <Search className="w-3.5 h-3.5" />
+                  </div>
+                  <input
+                    type="text"
+                    value={productSearchQuery}
+                    onFocus={() => setIsProductDropdownOpen(true)}
+                    onChange={(e) => {
+                      setProductSearchQuery(e.target.value);
+                      setIsProductDropdownOpen(true);
+                    }}
+                    placeholder={
+                      newOrderForm.itemName
+                        ? `Selected: ${newOrderForm.itemName}`
+                        : "Search products by name, SKU, category..."
+                    }
+                    className="w-full pl-8 pr-8 py-2 border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:border-zinc-500 rounded-none text-xs"
+                  />
+                  {productSearchQuery && (
+                    <button
+                      type="button"
+                      onClick={() => setProductSearchQuery('')}
+                      className="absolute inset-y-0 right-0 pr-2.5 flex items-center text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 cursor-pointer"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </div>
+
+                {/* Dropdown Results Menu */}
+                {isProductDropdownOpen && (
+                  <div className="absolute left-0 right-0 top-full mt-1 max-h-56 overflow-y-auto bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 shadow-2xl z-50 rounded-none divide-y divide-gray-100 dark:divide-gray-800">
+                    {/* Clear selection option */}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsProductDropdownOpen(false);
+                        setProductSearchQuery('');
+                        setNewOrderForm((prev) => ({
+                          ...prev,
+                          itemName: '',
+                          sku: '',
+                          price: 150.00,
+                          onHand: 50,
+                          image: ''
+                        }));
+                      }}
+                      className="w-full text-left px-3 py-2 text-xs text-amber-600 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-950/30 flex items-center gap-2 font-medium cursor-pointer transition-colors"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      <span>Custom product (Clear selection)</span>
+                    </button>
+
+                    {/* Filtered products */}
+                    {filteredCatalogProducts.length > 0 ? (
+                      filteredCatalogProducts.map((p) => {
+                        const isSelected = newOrderForm.itemName === p.name;
+                        const displayPrice = parseFloat(p.discount_price || p.price) || 0;
+                        return (
+                          <button
+                            key={p.id}
+                            type="button"
+                            onClick={() => {
+                              setNewOrderForm((prev) => ({
+                                ...prev,
+                                itemName: p.name,
+                                sku: p.sku || `SKU-${p.id}`,
+                                price: displayPrice,
+                                onHand: p.stock_qty ?? 50,
+                                image: p.image || ''
+                              }));
+                              setProductSearchQuery(p.name);
+                              setIsProductDropdownOpen(false);
+                            }}
+                            className={`w-full text-left px-3 py-2 flex items-center justify-between gap-3 text-xs hover:bg-gray-50 dark:hover:bg-gray-800 cursor-pointer transition-colors ${
+                              isSelected ? 'bg-amber-50/70 dark:bg-amber-950/40 border-l-2 border-amber-500' : ''
+                            }`}
+                          >
+                            <div className="flex items-center gap-2.5 min-w-0">
+                              {p.image ? (
+                                <img
+                                  src={p.image}
+                                  alt={p.name}
+                                  className="w-8 h-8 object-cover rounded-none shrink-0 border border-gray-200 dark:border-gray-700"
+                                  onError={(e) => {
+                                    e.target.onerror = null;
+                                    e.target.src = 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=100&auto=format&fit=crop&q=80';
+                                  }}
+                                />
+                              ) : (
+                                <div className="w-8 h-8 bg-gray-100 dark:bg-gray-800 flex items-center justify-center shrink-0 border border-gray-200 dark:border-gray-700">
+                                  <Package className="w-4 h-4 text-gray-400" />
+                                </div>
+                              )}
+                              <div className="min-w-0">
+                                <p className="font-semibold text-gray-900 dark:text-white truncate">{p.name}</p>
+                                <p className="text-[11px] text-gray-500 dark:text-gray-400">
+                                  {p.sku ? `SKU: ${p.sku}` : `ID: #${p.id}`} • Stock:{' '}
+                                  <span className={p.stock_qty < 5 ? 'text-rose-500 font-bold' : 'text-emerald-600 dark:text-emerald-400 font-medium'}>
+                                    {p.stock_qty ?? 'N/A'}
+                                  </span>
+                                </p>
+                              </div>
+                            </div>
+
+                            <div className="text-right shrink-0">
+                              <span className="font-bold text-amber-600 dark:text-amber-400 text-xs">
+                                ${displayPrice.toFixed(2)}
+                              </span>
+                              {isSelected && (
+                                <div className="flex justify-end text-amber-600 dark:text-amber-400 mt-0.5">
+                                  <Check className="w-3.5 h-3.5" />
+                                </div>
+                              )}
+                            </div>
+                          </button>
+                        );
+                      })
+                    ) : (
+                      <div className="p-3 text-center text-xs text-gray-400 italic">
+                        No products found matching "{productSearchQuery}"
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+
               <div>
-                <label className="block font-semibold text-gray-700 dark:text-gray-300 mb-1">Item Name</label>
+                <label className="block font-semibold text-gray-700 dark:text-gray-300 mb-1">Item / Product Name *</label>
                 <input
                   type="text"
                   required
                   value={newOrderForm.itemName}
                   onChange={(e) => setNewOrderForm({ ...newOrderForm, itemName: e.target.value })}
-                  placeholder="e.g. Ergonomic Office Chair"
+                  placeholder="e.g. Wireless Noise-Canceling Headphones"
                   className="w-full px-3 py-2 border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:border-zinc-500 rounded-none"
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-3 gap-3">
                 <div>
-                  <label className="block font-semibold text-gray-700 dark:text-gray-300 mb-1">SKU Number</label>
+                  <label className="block font-semibold text-gray-700 dark:text-gray-300 mb-1">Unit Price ($)</label>
                   <input
-                    type="text"
-                    value={newOrderForm.sku}
-                    onChange={(e) => setNewOrderForm({ ...newOrderForm, sku: e.target.value })}
-                    placeholder="e.g. SKU-901283"
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    value={newOrderForm.price}
+                    onChange={(e) => setNewOrderForm({ ...newOrderForm, price: e.target.value })}
                     className="w-full px-3 py-2 border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none rounded-none"
                   />
                 </div>
 
                 <div>
-                  <label className="block font-semibold text-gray-700 dark:text-gray-300 mb-1">On-Hand Stock</label>
+                  <label className="block font-semibold text-gray-700 dark:text-gray-300 mb-1">Quantity</label>
                   <input
                     type="number"
-                    value={newOrderForm.onHand}
-                    onChange={(e) => setNewOrderForm({ ...newOrderForm, onHand: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none rounded-none"
+                    min="1"
+                    value={newOrderForm.quantity}
+                    onChange={(e) => setNewOrderForm({ ...newOrderForm, quantity: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none rounded-none font-bold"
                   />
+                </div>
+
+                <div>
+                  <label className="block font-semibold text-gray-700 dark:text-gray-300 mb-1">Status</label>
+                  <select
+                    value={newOrderForm.status}
+                    onChange={(e) => setNewOrderForm({ ...newOrderForm, status: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none rounded-none cursor-pointer"
+                  >
+                    <option value="Pending">Pending</option>
+                    <option value="Processing">Processing</option>
+                    <option value="Shipped">Shipped</option>
+                    <option value="Delivered">Delivered</option>
+                  </select>
                 </div>
               </div>
 
-              <div className="pt-4 flex justify-end gap-2">
+              {/* Total Summary */}
+              <div className="p-3 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900/60 rounded-none flex items-center justify-between">
+                <span className="font-semibold text-amber-900 dark:text-amber-300 text-xs">Total Amount:</span>
+                <span className="font-extrabold text-amber-700 dark:text-amber-400 text-base">
+                  ${((Number(newOrderForm.quantity) || 1) * (Number(newOrderForm.price) || 0)).toFixed(2)}
+                </span>
+              </div>
+
+              <div className="pt-4 flex justify-end gap-2 border-t border-gray-100 dark:border-gray-800">
                 <button
                   type="button"
                   onClick={() => setIsNewOrderModalOpen(false)}
-                  className="px-4 py-2 border border-gray-300 dark:border-gray-700 text-gray-700 dark:text-gray-300 text-xs font-semibold hover:bg-gray-100 dark:hover:bg-gray-800 rounded-none cursor-pointer"
+                  disabled={isCreatingOrder}
+                  className="px-4 py-2 border border-gray-300 dark:border-gray-700 text-gray-700 dark:text-gray-300 text-xs font-semibold hover:bg-gray-100 dark:hover:bg-gray-800 rounded-none cursor-pointer disabled:opacity-50"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2 bg-[#18181b] hover:bg-zinc-800 text-white text-xs font-bold rounded-none shadow-md cursor-pointer"
+                  disabled={isCreatingOrder}
+                  className="px-5 py-2 bg-[#18181b] hover:bg-zinc-800 dark:bg-amber-500 dark:hover:bg-amber-600 text-white text-xs font-bold rounded-none shadow-md cursor-pointer inline-flex items-center gap-1.5 disabled:opacity-60"
                 >
-                  Create Order
+                  {isCreatingOrder ? (
+                    <>
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      <span>Creating Order...</span>
+                    </>
+                  ) : (
+                    <span>Create Order</span>
+                  )}
                 </button>
               </div>
             </form>

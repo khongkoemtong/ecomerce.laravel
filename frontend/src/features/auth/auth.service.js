@@ -1,9 +1,16 @@
+const defaultHost =
+  typeof window !== 'undefined' && window.location.hostname === 'localhost'
+    ? 'http://localhost:8000/api'
+    : 'http://127.0.0.1:8000/api'
+
 const API_BASE_URL =
-  import.meta.env.VITE_API_URL?.replace(/\/$/, '') ?? 'http://127.0.0.1:8000/api'
+  import.meta.env.VITE_API_URL?.replace(/\/$/, '') ?? defaultHost
 
 const BACKEND_BASE_URL = API_BASE_URL.replace(/\/api$/, '')
 
 function getCookieValue(name) {
+  if (typeof document === 'undefined') return null
+
   const cookie = document.cookie
     .split('; ')
     .find((entry) => entry.startsWith(`${name}=`))
@@ -22,8 +29,12 @@ function buildHeaders(extraHeaders = {}) {
     ...extraHeaders,
   }
 
-  const csrfToken = getCookieValue('XSRF-TOKEN')
+  const token = typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`
+  }
 
+  const csrfToken = getCookieValue('XSRF-TOKEN')
   if (csrfToken) {
     headers['X-XSRF-TOKEN'] = csrfToken
   }
@@ -60,53 +71,102 @@ async function request(path, options = {}) {
 }
 
 export async function ensureCsrfCookie() {
-  await fetch(`${BACKEND_BASE_URL}/sanctum/csrf-cookie`, {
-    credentials: 'include',
-    headers: {
-      Accept: 'application/json',
-      'X-Requested-With': 'XMLHttpRequest',
-    },
-  })
+  try {
+    await fetch(`${BACKEND_BASE_URL}/sanctum/csrf-cookie`, {
+      credentials: 'include',
+      headers: {
+        Accept: 'application/json',
+        'X-Requested-With': 'XMLHttpRequest',
+      },
+    })
+  } catch (err) {
+    // Non-blocking fallback for token-based auth
+  }
 }
 
 export async function loginRequest(payload) {
   await ensureCsrfCookie()
 
-  return request('/login', {
+  const response = await request('/login', {
     method: 'POST',
     headers: buildHeaders({
       'Content-Type': 'application/json',
     }),
     body: JSON.stringify(payload),
   })
+
+  const token = response.token || response.access_token
+  if (token) {
+    localStorage.setItem('auth_token', token)
+  }
+  if (response.user) {
+    localStorage.setItem('auth_user', JSON.stringify(response.user))
+  }
+
+  return response
 }
 
 export async function registerRequest(payload) {
   await ensureCsrfCookie()
 
-  return request('/register', {
+  const response = await request('/register', {
     method: 'POST',
     headers: buildHeaders({
       'Content-Type': 'application/json',
     }),
     body: JSON.stringify(payload),
   })
+
+  const token = response.token || response.access_token
+  if (token) {
+    localStorage.setItem('auth_token', token)
+  }
+  if (response.user) {
+    localStorage.setItem('auth_user', JSON.stringify(response.user))
+  }
+
+  return response
 }
 
 export async function logoutRequest() {
-  await ensureCsrfCookie()
-
-  return request('/logout', {
-    method: 'POST',
-    headers: buildHeaders({
-      'Content-Type': 'application/json',
-    }),
-  })
+  try {
+    await ensureCsrfCookie()
+    await request('/logout', {
+      method: 'POST',
+      headers: buildHeaders({
+        'Content-Type': 'application/json',
+      }),
+    })
+  } finally {
+    localStorage.removeItem('auth_token')
+    localStorage.removeItem('auth_user')
+  }
 }
 
 export async function fetchCurrentUserRequest() {
-  return request('/me', {
+  const response = await request('/me', {
     method: 'GET',
     headers: buildHeaders(),
   })
+
+  if (response.user) {
+    localStorage.setItem('auth_user', JSON.stringify(response.user))
+  }
+
+  return response
 }
+
+export async function fetchUserOrdersRequest(userId, email) {
+  const queryParams = new URLSearchParams()
+  if (userId) queryParams.set('user_id', userId)
+  if (email) queryParams.set('email', email)
+
+  const queryString = queryParams.toString() ? `?${queryParams.toString()}` : ''
+  const response = await request(`/user/orders${queryString}`, {
+    method: 'GET',
+    headers: buildHeaders(),
+  })
+
+  return response
+}
+

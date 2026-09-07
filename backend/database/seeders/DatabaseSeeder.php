@@ -27,6 +27,7 @@ class DatabaseSeeder extends Seeder
             PaymentSeeder::class,
             ReviewSeeder::class,
             ShippingSeeder::class,
+            PromotionSeeder::class,
         ]);
 
        

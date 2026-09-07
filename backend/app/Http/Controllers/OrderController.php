@@ -92,7 +92,7 @@ class OrderController extends Controller
     {
         $this->authorize('viewAny', OrderModel::class);
 
-        $query = OrderModel::with('items')->latest();
+        $query = OrderModel::with(['items.product', 'address', 'user'])->latest();
 
         if ($request->user()->role?->name !== 'admin') {
             $query->where('user_id', $request->user()->id);
@@ -101,7 +101,39 @@ class OrderController extends Controller
         }
 
         return $this->successResponse('Orders found.', [
-            'orders' => OrderResource::collection($query->paginate($request->integer('per_page', 12))),
+            'orders' => OrderResource::collection($query->paginate($request->integer('per_page', 20))),
+        ]);
+    }
+
+    public function myOrders(Request $request): JsonResponse
+    {
+        $userId = null;
+        if ($request->user()) {
+            $userId = $request->user()->id;
+        } elseif ($request->filled('user_id')) {
+            $userId = (int) $request->user_id;
+        } elseif ($request->filled('email')) {
+            $user = \App\Models\User::where('email', $request->email)->first();
+            $userId = $user?->id;
+        }
+
+        if (!$userId) {
+            return response()->json([
+                'success' => false,
+                'message' => 'User not identified.',
+                'orders' => []
+            ], 401);
+        }
+
+        $orders = OrderModel::with(['items.product', 'address', 'user'])
+            ->where('user_id', $userId)
+            ->latest()
+            ->get();
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Orders fetched successfully.',
+            'orders' => OrderResource::collection($orders),
         ]);
     }
 
@@ -297,7 +329,7 @@ class OrderController extends Controller
 
     public function getOrderLineData(Request $request): JsonResponse
     {
-        $query = OrderModel::with(['user', 'items.product'])->orderBy('id', 'asc');
+        $query = OrderModel::with(['user', 'items.product'])->orderBy('id', 'desc');
 
         if ($request->filled('status') && strtolower($request->status) !== 'all') {
             $query->where('order_status', strtolower($request->status));
@@ -429,38 +461,321 @@ class OrderController extends Controller
 
     public function createAdminOrder(Request $request): JsonResponse
     {
-        $user = \App\Models\UserModel::first();
-        $userId = $user ? $user->id : 1;
+        $customerName = $request->input('customer', 'Guest Customer');
+        $user = \App\Models\User::where('name', $customerName)->first();
+        if (!$user) {
+            $user = \App\Models\User::first();
+        }
+        if (!$user) {
+            $user = \App\Models\User::create([
+                'name' => $customerName,
+                'email' => strtolower(str_replace(' ', '', $customerName)) . rand(100, 999) . '@example.com',
+                'password' => bcrypt('password'),
+            ]);
+        }
+        $userId = $user->id;
+
+        $address = AddressesModel::where('user_id', $userId)->first();
+        if (!$address) {
+            $address = AddressesModel::create([
+                'user_id' => $userId,
+                'address' => '123 Main Street',
+                'city' => 'Phnom Penh',
+                'state' => 'Phnom Penh',
+                'postal_code' => '12000',
+                'country' => 'Cambodia',
+                'phone' => '012345678',
+            ]);
+        }
 
         $orderNumber = 'ORD-' . strtoupper(substr(md5((string)microtime()), 0, 8));
+        $total = (float)($request->input('total', 150.00));
 
         $order = OrderModel::create([
             'user_id' => $userId,
+            'address_id' => $address->id,
             'order_number' => $orderNumber,
-            'total' => (float)($request->input('total', 150)),
-            'subtotal' => (float)($request->input('total', 150)),
-            'tax' => 0,
+            'total' => $total,
+            'subtotal' => $total,
             'shipping_fee' => 0,
             'discount' => 0,
-            'order_status' => OrderModel::ORDER_STATUS_PENDING,
-            'payment_status' => OrderModel::PAYMENT_STATUS_UNPAID,
+            'order_status' => strtolower($request->input('status', OrderModel::ORDER_STATUS_PENDING)),
+            'payment_status' => OrderModel::PAYMENT_STATUS_PENDING,
+            'payment_method' => $request->input('payment_method', 'cash_on_delivery'),
         ]);
 
         $productName = $request->input('itemName', 'Custom Order Item');
-        $product = ProductModel::first();
-        
+        $sku = $request->input('sku');
+        $product = null;
+        if ($sku) {
+            $product = ProductModel::where('sku', $sku)->first();
+        }
+        if (!$product) {
+            $product = ProductModel::where('name', 'like', "%{$productName}%")->first() ?? ProductModel::first();
+        }
+
+        $quantity = (int)($request->input('quantity', 1)) ?: 1;
+        $price = (float)($request->input('price', $total / $quantity));
+
         OrderItemModel::create([
             'order_id' => $order->id,
             'product_id' => $product ? $product->id : 1,
             'product_name' => $productName,
-            'quantity' => 1,
-            'unit_price' => 150.00,
-            'subtotal' => 150.00,
+            'quantity' => $quantity,
+            'price' => $price,
+            'total' => $price * $quantity,
         ]);
 
         return response()->json([
             'message' => 'Order created successfully',
-            'order' => $order,
+            'order' => $order->load(['user', 'items.product']),
+        ], 201);
+    }
+
+    public function checkoutStore(Request $request): JsonResponse
+    {
+        $items = $request->input('items', []);
+        if (empty($items)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Your shopping bag is empty.',
+            ], 422);
+        }
+
+        // 1. Enforce Account Requirement (User must have an account)
+        $user = null;
+        if ($request->user()) {
+            $user = $request->user();
+        } elseif ($request->filled('user_id')) {
+            $user = \App\Models\User::find($request->user_id);
+        } elseif ($request->filled('email')) {
+            $user = \App\Models\User::where('email', $request->email)->first();
+        }
+
+        if (!$user) {
+            return response()->json([
+                'success' => false,
+                'require_auth' => true,
+                'message' => 'Please sign in or create an account to complete your payment and order.',
+            ], 401);
+        }
+
+        // 2. Resolve or Create Address
+        // 2. Resolve Products and Validate Stock
+        $resolvedProducts = [];
+        foreach ($items as $item) {
+            $product = null;
+            if (!empty($item['dbId']) || !empty($item['product_id']) || !empty($item['id'])) {
+                $prodId = $item['dbId'] ?? $item['product_id'] ?? $item['id'];
+                if (is_numeric($prodId)) {
+                    $product = ProductModel::find($prodId);
+                } else {
+                    $product = ProductModel::where('slug', $prodId)->first();
+                }
+            }
+            if (!$product && !empty($item['sku'])) {
+                $product = ProductModel::where('sku', $item['sku'])->first();
+            }
+            if (!$product && !empty($item['name'])) {
+                $product = ProductModel::where('name', $item['name'])->first();
+            }
+
+            if (!$product) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Product "' . ($item['name'] ?? 'Item') . '" could not be found.',
+                ], 404);
+            }
+
+            $qty = max(1, (int) ($item['quantity'] ?? 1));
+
+            // Strict Stock Verification: Cannot buy if out of stock or quantity exceeds stock
+            if ((int)$product->stock_qty <= 0) {
+                return response()->json([
+                    'success' => false,
+                    'out_of_stock' => true,
+                    'product_id' => $product->id,
+                    'product_name' => $product->name,
+                    'message' => 'Sorry, "' . $product->name . '" is currently out of stock and cannot be purchased.',
+                ], 422);
+            }
+
+            if ($qty > (int)$product->stock_qty) {
+                return response()->json([
+                    'success' => false,
+                    'insufficient_stock' => true,
+                    'product_id' => $product->id,
+                    'product_name' => $product->name,
+                    'available_stock' => (int)$product->stock_qty,
+                    'message' => 'Sorry, only ' . $product->stock_qty . ' unit(s) left in stock for "' . $product->name . '" (Requested: ' . $qty . ').',
+                ], 422);
+            }
+
+            $resolvedProducts[] = [
+                'product' => $product,
+                'item' => $item,
+                'qty' => $qty,
+            ];
+        }
+
+        // 3. Resolve or Create Address
+        $fullName = trim((string)$request->input('customer_name')) ?: ($user->name ?: 'Customer');
+        $addressLine = trim((string)$request->input('address1')) ?: (trim((string)$request->input('address')) ?: 'Phnom Penh City, Cambodia');
+        if ($request->filled('address2') && trim((string)$request->input('address2')) !== '') {
+            $addressLine .= ', ' . trim((string)$request->input('address2'));
+        }
+        $city = trim((string)$request->input('city')) ?: 'Phnom Penh';
+        $state = trim((string)$request->input('state')) ?: 'Phnom Penh';
+        $phone = trim((string)$request->input('phone')) ?: ($user->phone ?: '012345678');
+
+        $address = AddressesModel::create([
+            'user_id' => $user->id,
+            'full_name' => $fullName,
+            'phone' => $phone ?: '012345678',
+            'province' => $state,
+            'city' => $city,
+            'district' => $state,
+            'address_line' => $addressLine,
+            'is_default' => 1,
+        ]);
+
+        // 3. Create Order
+        $orderNumber = $this->generateOrderNumber();
+        $subtotal = (float) $request->input('subtotal', 0);
+        $discount = (float) $request->input('discount', 0);
+        $shippingFee = (float) $request->input('shipping_fee', 0);
+        $total = (float) $request->input('total', max(0, $subtotal - $discount + $shippingFee));
+        // 4. Create Order & Deduct Stock Atomically
+        try {
+            $order = DB::transaction(function () use ($request, $user, $address, $resolvedProducts) {
+                $orderNumber = $this->generateOrderNumber();
+                $subtotal = (float) $request->input('subtotal', 0);
+                $discount = (float) $request->input('discount', 0);
+                $shippingFee = (float) $request->input('shipping_fee', 0);
+                $total = (float) $request->input('total', max(0, $subtotal - $discount + $shippingFee));
+
+        $order = OrderModel::create([
+            'user_id' => $user->id,
+            'address_id' => $address->id,
+            'order_number' => $orderNumber,
+            'subtotal' => $subtotal,
+            'discount' => $discount,
+            'shipping_fee' => $shippingFee,
+            'total' => $total,
+            'payment_status' => OrderModel::PAYMENT_STATUS_PENDING,
+            'order_status' => OrderModel::ORDER_STATUS_PENDING,
+            'payment_method' => $request->input('payment_method', 'cash_on_delivery'),
+        ]);
+                $order = OrderModel::create([
+                    'user_id' => $user->id,
+                    'address_id' => $address->id,
+                    'order_number' => $orderNumber,
+                    'subtotal' => $subtotal,
+                    'discount' => $discount,
+                    'shipping_fee' => $shippingFee,
+                    'total' => $total,
+                    'payment_status' => OrderModel::PAYMENT_STATUS_PENDING,
+                    'order_status' => OrderModel::ORDER_STATUS_PENDING,
+                    'payment_method' => $request->input('payment_method', 'cash_on_delivery'),
+                ]);
+
+        // 4. Create Order Items & Reduce Stock
+        foreach ($items as $item) {
+            $product = null;
+            if (!empty($item['dbId']) || !empty($item['product_id']) || !empty($item['id'])) {
+                $prodId = $item['dbId'] ?? $item['product_id'] ?? $item['id'];
+                if (is_numeric($prodId)) {
+                    $product = ProductModel::find($prodId);
+                } else {
+                    $product = ProductModel::where('slug', $prodId)->first();
+                }
+            }
+            if (!$product && !empty($item['sku'])) {
+                $product = ProductModel::where('sku', $item['sku'])->first();
+            }
+            if (!$product && !empty($item['name'])) {
+                $product = ProductModel::where('name', $item['name'])->first();
+            }
+                foreach ($resolvedProducts as $entry) {
+                    $item = $entry['item'];
+                    $qty = $entry['qty'];
+                    
+                    // Lock product row for atomic stock check
+                    $product = ProductModel::lockForUpdate()->find($entry['product']->id);
+                    if (!$product || $product->stock_qty < $qty) {
+                        throw new \RuntimeException('Insufficient stock for product "' . ($product ? $product->name : 'Item') . '".');
+                    }
+
+            $qty = max(1, (int) ($item['quantity'] ?? 1));
+            $price = (float) ($item['price'] ?? ($product ? ($product->discount_price ?? $product->price) : 0));
+            $itemTotal = $price * $qty;
+            $productName = $item['name'] ?? ($product ? $product->name : 'Product Item');
+                    $price = (float) ($item['price'] ?? ($product->discount_price ?? $product->price));
+                    $itemTotal = $price * $qty;
+                    $productName = $item['name'] ?? $product->name;
+
+            // Format size / color variant suffix if present
+            $variantInfo = [];
+            if (!empty($item['size'])) $variantInfo[] = 'Size: ' . $item['size'];
+            if (!empty($item['color'])) $variantInfo[] = 'Color: ' . $item['color'];
+            if (!empty($variantInfo)) {
+                $productName .= ' (' . implode(', ', $variantInfo) . ')';
+            }
+                    // Format size / color variant suffix if present
+                    $variantInfo = [];
+                    if (!empty($item['size'])) $variantInfo[] = 'Size: ' . $item['size'];
+                    if (!empty($item['color'])) $variantInfo[] = 'Color: ' . $item['color'];
+                    if (!empty($variantInfo)) {
+                        $productName .= ' (' . implode(', ', $variantInfo) . ')';
+                    }
+
+            OrderItemModel::create([
+                'order_id' => $order->id,
+                'product_id' => $product ? $product->id : 1,
+                'product_name' => $productName,
+                'price' => $price,
+                'quantity' => $qty,
+                'total' => $itemTotal,
+            ]);
+                    OrderItemModel::create([
+                        'order_id' => $order->id,
+                        'product_id' => $product->id,
+                        'product_name' => $productName,
+                        'price' => $price,
+                        'quantity' => $qty,
+                        'total' => $itemTotal,
+                    ]);
+
+            if ($product) {
+                $product->decrement('stock_qty', min($qty, $product->stock_qty));
+            }
+        }
+                    // Deduct stock safely
+                    $product->decrement('stock_qty', $qty);
+                }
+
+        // Increment promotion usage count if promo code was used
+        if ($request->filled('promo_code')) {
+            \App\Models\PromotionModel::where('code', strtoupper($request->promo_code))->increment('usage_count');
+                // Increment promotion usage count if promo code was used
+                if ($request->filled('promo_code')) {
+                    \App\Models\PromotionModel::where('code', strtoupper($request->promo_code))->increment('usage_count');
+                }
+
+                return $order;
+            });
+        } catch (\Throwable $e) {
+            Log::error('Checkout store failed due to stock/db error:', ['error' => $e->getMessage()]);
+            return response()->json([
+                'success' => false,
+                'message' => $e->getMessage(),
+            ], 422);
+        }
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Order placed successfully! Order #' . $order->order_number,
+            'order' => $order->load(['user', 'items.product']),
         ], 201);
     }
 }
